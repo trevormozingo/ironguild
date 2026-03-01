@@ -1,0 +1,38 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "BaseProfile",
+  "description": "Base profile schema containing all profile fields",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Firebase user ID"
+    },
+    "username": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 30,
+      "pattern": "^[a-zA-Z0-9_-]+$",
+      "description": "Unique username (alphanumeric, underscores, hyphens)"
+    },
+    "displayName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "description": "User's display name"
+    },
+    "bio": {
+      "type": ["string", "null"],
+      "maxLength": 500,
+      "default": null,
+      "description": "Short biography"
+    },
+    "birthday": {
+      "type": ["string", "null"],
+      "format": "date",
+      "default": null,
+      "description": "User's date of birth (YYYY-MM-DD)"
+    },  
+    "additionalProperties": false
+  }
+}

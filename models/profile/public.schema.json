@@ -1,0 +1,22 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PublicProfile",
+  "description": "Public-facing profile view. Excludes sensitive fields.",
+  "type": "object",
+  "properties": {
+    "username": {
+      "$ref": "base.schema.json#/properties/username"
+    },
+    "displayName": {
+      "$ref": "base.schema.json#/properties/displayName"
+    },
+    "bio": {
+      "$ref": "base.schema.json#/properties/bio"
+    },
+    "birthday": {
+      "$ref": "base.schema.json#/properties/birthday"
+    }
+  },
+  "required": ["username", "displayName"],
+  "additionalProperties": false
+}

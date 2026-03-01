@@ -1,0 +1,68 @@
+services:
+  mongodb:
+    image: mongo:7
+    healthcheck:
+      test: mongosh --eval "db.runCommand('ping').ok" --quiet
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  firebase-emulator:
+    build:
+      context: ./firebase-emulator
+    ports:
+      - "9099:9099"
+    healthcheck:
+      test: ["CMD", "node", "-e", "const h=require('http');h.get('http://localhost:9099/',r=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  profile-service:
+    build:
+      context: ../profile-service
+      dockerfile: Dockerfile
+    environment:
+      MONGO_URI: mongodb://mongodb:27017
+      MONGO_DB: ironguild_test
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      FIREBASE_AUTH_EMULATOR_HOST: firebase-emulator:9099
+      FIREBASE_PROJECT_ID: ironguild-local
+      PROFILE_SERVICE_URL: http://profile-service:8000
+    depends_on:
+      profile-service:
+        condition: service_healthy
+      firebase-emulator:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  test-client:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    environment:
+      GATEWAY_URL: http://api-gateway:8080
+      FIREBASE_AUTH_EMULATOR_HOST: firebase-emulator:9099
+      FIREBASE_PROJECT_ID: ironguild-local
+    depends_on:
+      api-gateway:
+        condition: service_healthy
