@@ -15,8 +15,14 @@
     },
     "birthday": {
       "$ref": "base.schema.json#/properties/birthday"
+    },
+    "status": {
+      "$ref": "base.schema.json#/properties/status"
+    },
+    "location": {
+      "$ref": "base.schema.json#/properties/location"
     }
   },
-  "required": ["username", "displayName"],
+  "required": ["username", "displayName", "status"],
   "additionalProperties": false
 }

@@ -11,6 +11,6 @@
       "$ref": "base.schema.json#/properties/displayName"
     }
   },
-  "required": ["username", "displayName"],
+  "required": ["username"],
   "additionalProperties": false
 }

@@ -9,6 +9,11 @@ from fastapi import FastAPI
 
 from .database import connect, disconnect
 from .routes import router
+from .post_routes import router as post_router
+from .follow_routes import router as follow_router
+from .feed_routes import router as feed_router
+from .reaction_routes import router as reaction_router
+from .comment_routes import router as comment_router
 
 
 @asynccontextmanager
@@ -27,6 +32,11 @@ app = FastAPI(
 )
 
 app.include_router(router)
+app.include_router(post_router)
+app.include_router(follow_router)
+app.include_router(feed_router)
+app.include_router(reaction_router)
+app.include_router(comment_router)
 
 
 @app.get("/health")
