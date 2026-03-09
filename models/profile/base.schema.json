@@ -32,37 +32,6 @@
       "format": "date",
       "default": null,
       "description": "User's date of birth (YYYY-MM-DD)"
-    },
-    "status": {
-      "type": "string",
-      "enum": ["pending", "active", "suspended"],
-      "default": "pending",
-      "description": "Account status"
-    },
-    "location": {
-      "oneOf": [
-        {
-          "type": "object",
-          "properties": {
-            "type": {
-              "type": "string",
-              "enum": ["Point"]
-            },
-            "coordinates": {
-              "type": "array",
-              "items": { "type": "number" },
-              "minItems": 2,
-              "maxItems": 2,
-              "description": "[longitude, latitude]"
-            }
-          },
-          "required": ["type", "coordinates"],
-          "additionalProperties": false
-        },
-        { "type": "null" }
-      ],
-      "default": null,
-      "description": "User's geolocation as a GeoJSON Point for proximity queries"
     }
   },
   "additionalProperties": false

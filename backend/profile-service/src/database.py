@@ -190,6 +190,22 @@ async def create_post(uid: str, data: dict[str, Any]) -> dict[str, Any] | None:
             return doc
 
 
+async def get_user_posts(
+    uid: str, *, limit: int = 20, cursor: str | None = None
+) -> list[dict[str, Any]]:
+    """Return posts authored by *uid*, newest first, with cursor pagination."""
+    query: dict[str, Any] = {"authorUid": uid}
+    if cursor:
+        query["createdAt"] = {"$lt": cursor}
+    docs = (
+        _posts()
+        .find(query)
+        .sort("createdAt", -1)
+        .limit(limit)
+    )
+    return [doc async for doc in docs]
+
+
 async def delete_post(post_id: str, uid: str) -> bool:
     """Delete a post and its feed/reactions/comments atomically. Only the author can delete."""
     try:

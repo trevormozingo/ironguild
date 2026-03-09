@@ -12,9 +12,6 @@
     },
     "birthday": {
       "$ref": "base.schema.json#/properties/birthday"
-    },
-    "location": {
-      "$ref": "base.schema.json#/properties/location"
     }
   },
   "minProperties": 1,

@@ -153,6 +153,13 @@ async def get_public_profile(username: str, request: Request):
 # ─────────────────────────────────────────────────────────────────────
 
 
+@router.get("/posts")
+async def list_my_posts(request: Request):
+    """List the caller's own posts — requires auth."""
+    uid = _require_auth(request)
+    return await _proxy_to_service("posts", "", request, uid)
+
+
 @router.post("/posts")
 async def create_post(request: Request):
     """Create a post — requires auth."""

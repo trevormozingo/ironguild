@@ -1,0 +1,117 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "BasePost",
+  "description": "Base post schema containing all post fields",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Post ID (MongoDB ObjectId as string)"
+    },
+    "authorUid": {
+      "type": "string",
+      "description": "Firebase UID of the post author"
+    },
+    "title": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "Optional post title"
+    },
+    "body": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "maxLength": 5000,
+      "description": "Text content or caption"
+    },
+    "media": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "URL of the media file"
+          },
+          "mimeType": {
+            "type": "string",
+            "description": "MIME type so the client knows how to render (e.g. image/jpeg, video/mp4)"
+          }
+        },
+        "required": ["url", "mimeType"],
+        "additionalProperties": false
+      },
+      "maxItems": 10,
+      "description": "Attached media files"
+    },
+    "workout": {
+      "type": ["object", "null"],
+      "properties": {
+        "activityType": {
+          "type": "string",
+          "enum": [
+            "running",
+            "cycling",
+            "swimming",
+            "weightlifting",
+            "crossfit",
+            "yoga",
+            "pilates",
+            "hiking",
+            "rowing",
+            "boxing",
+            "martial_arts",
+            "climbing",
+            "dance",
+            "stretching",
+            "cardio",
+            "hiit",
+            "walking",
+            "sports",
+            "other"
+          ],
+          "description": "Type of workout"
+        },
+        "durationSeconds": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "How long the workout lasted in seconds"
+        },
+        "caloriesBurned": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "description": "Calories burned"
+        }
+      },
+      "required": ["activityType"],
+      "additionalProperties": false,
+      "description": "Workout data"
+    },
+    "bodyMetrics": {
+      "type": ["object", "null"],
+      "properties": {
+        "weightLbs": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "description": "Body weight in pounds"
+        },
+        "bodyFatPercentage": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Body fat percentage"
+        }
+      },
+      "minProperties": 1,
+      "additionalProperties": false,
+      "description": "Body metrics update"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the post was created"
+    }
+  },
+  "additionalProperties": false
+}

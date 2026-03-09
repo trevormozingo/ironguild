@@ -7,9 +7,9 @@ Response shape matches post/base.schema.json:
 Only users with an existing profile can create or delete posts.
 """
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Header, HTTPException, Query, Request
 
-from .database import create_post, delete_post
+from .database import create_post, delete_post, get_user_posts
 from .schema import validate
 
 router = APIRouter(prefix="/posts", tags=["posts"])
@@ -27,6 +27,19 @@ def _to_response(doc: dict) -> dict:
         "bodyMetrics": doc.get("bodyMetrics"),
         "createdAt": doc["createdAt"],
     }
+
+
+@router.get("")
+async def list_my_posts(
+    x_user_id: str = Header(...),
+    limit: int = Query(default=20, ge=1, le=100),
+    cursor: str | None = Query(default=None),
+):
+    """Return the caller's own posts, newest first."""
+    docs = await get_user_posts(x_user_id, limit=limit, cursor=cursor)
+    items = [_to_response(d) for d in docs]
+    next_cursor = items[-1]["createdAt"] if items else None
+    return {"items": items, "count": len(items), "cursor": next_cursor}
 
 
 @router.post("", status_code=201)
