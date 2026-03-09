@@ -13,7 +13,7 @@ router = APIRouter(prefix="/posts", tags=["comments"])
 
 
 def _to_response(doc: dict) -> dict:
-    """Shape a DB doc into the base.schema.json response."""
+    """Shape a DB doc into the response.schema.json response."""
     return {
         "id": str(doc["_id"]),
         "postId": str(doc["postId"]),

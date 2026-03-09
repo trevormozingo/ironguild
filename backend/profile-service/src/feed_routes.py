@@ -13,7 +13,7 @@ router = APIRouter(prefix="/feed", tags=["feed"])
 
 
 def _to_post(doc: dict) -> dict:
-    """Shape a DB post doc into the base.schema.json response."""
+    """Shape a DB post doc into the response.schema.json response."""
     resp = {
         "id": str(doc["_id"]),
         "authorUid": doc["authorUid"],

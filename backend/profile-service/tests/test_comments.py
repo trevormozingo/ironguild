@@ -20,7 +20,7 @@ BASE = os.environ.get("SERVICE_URL", "http://localhost:8000")
 MONGO_URI = os.environ.get("MONGO_URI", "mongodb://localhost:27017")
 MONGO_DB = os.environ.get("MONGO_DB", "ironguild_test")
 
-COMMENT_FIELDS = {"id", "postId", "authorUid", "body", "createdAt"}
+COMMENT_FIELDS = {"id", "postId", "authorUid", "authorUsername", "body", "createdAt"}
 
 
 def _uid() -> str:

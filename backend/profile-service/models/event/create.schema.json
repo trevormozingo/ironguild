@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "CreateEvent",
-  "description": "Schema for creating a new event. Server generates id, creatorUid, invitee statuses, and timestamps.",
+  "description": "Schema for creating a new event. Server generates id, authorUid, invitee statuses, and timestamps.",
   "type": "object",
   "properties": {
     "title": {

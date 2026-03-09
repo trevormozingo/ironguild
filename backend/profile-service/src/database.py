@@ -27,13 +27,13 @@ async def connect(mongo_uri: str, db_name: str = "ironguild") -> None:
     await _db.feed.create_index("postId")
     await _db.feed.create_index("authorUid")
     await _db.reactions.create_index(
-        [("postId", 1), ("uid", 1)], unique=True
+        [("postId", 1), ("authorUid", 1)], unique=True
     )
     await _db.reactions.create_index("postId")
-    await _db.reactions.create_index("uid")
+    await _db.reactions.create_index("authorUid")
     await _db.comments.create_index([("postId", 1), ("createdAt", 1)])
     await _db.comments.create_index("authorUid")
-    await _db.events.create_index([("creatorUid", 1), ("startTime", 1)])
+    await _db.events.create_index([("authorUid", 1), ("startTime", 1)])
     await _db.events.create_index("invitees.uid")
 
 
@@ -108,7 +108,7 @@ async def delete_profile(uid: str) -> bool:
                 session=session,
             )
             # Remove reactions/comments BY this user (on anyone's posts)
-            await _reactions().delete_many({"uid": uid}, session=session)
+            await _reactions().delete_many({"authorUid": uid}, session=session)
             await _comments().delete_many({"authorUid": uid}, session=session)
             # Remove reactions/comments ON this user's deleted posts
             if post_ids:
@@ -119,7 +119,7 @@ async def delete_profile(uid: str) -> bool:
                     {"postId": {"$in": post_ids}}, session=session
                 )
             # Remove events created by this user
-            await _events().delete_many({"creatorUid": uid}, session=session)
+            await _events().delete_many({"authorUid": uid}, session=session)
             # Remove this user from invitee lists on other events
             await _events().update_many(
                 {"invitees.uid": uid},
@@ -231,7 +231,7 @@ async def _enrich_posts(posts: list[dict[str, Any]], viewer_uid: str | None = No
     my_reaction_map: dict[Any, str] = {}
     if viewer_uid:
         my_cursor = _reactions().find(
-            {"postId": {"$in": post_ids}, "uid": viewer_uid},
+            {"postId": {"$in": post_ids}, "authorUid": viewer_uid},
             {"postId": 1, "type": 1, "_id": 0},
         )
         async for mr in my_cursor:
@@ -442,8 +442,8 @@ async def set_reaction(
             if post is None:
                 return None
             doc = await _reactions().find_one_and_update(
-                {"postId": oid, "uid": uid},
-                {"$set": {"postId": oid, "uid": uid, "type": reaction_type}},
+                {"postId": oid, "authorUid": uid},
+                {"$set": {"postId": oid, "authorUid": uid, "type": reaction_type}},
                 upsert=True,
                 return_document=True,
                 session=session,
@@ -457,7 +457,7 @@ async def remove_reaction(post_id: str, uid: str) -> bool:
         oid = ObjectId(post_id)
     except Exception:
         return False
-    result = await _reactions().delete_one({"postId": oid, "uid": uid})
+    result = await _reactions().delete_one({"postId": oid, "authorUid": uid})
     return result.deleted_count > 0
 
 
@@ -579,7 +579,7 @@ async def create_event(
             invitees = [{"uid": u, "status": "pending"} for u in invitee_uids]
 
             doc = {
-                "creatorUid": uid,
+                "authorUid": uid,
                 "title": data["title"],
                 "description": data.get("description"),
                 "location": data.get("location"),
@@ -604,7 +604,7 @@ async def get_event(event_id: str) -> dict[str, Any] | None:
 
 async def get_user_events(uid: str) -> list[dict[str, Any]]:
     """Get events created by a user, sorted by startTime."""
-    cursor = _events().find({"creatorUid": uid}).sort("startTime", 1)
+    cursor = _events().find({"authorUid": uid}).sort("startTime", 1)
     return [doc async for doc in cursor]
 
 
@@ -620,7 +620,7 @@ async def delete_event(event_id: str, uid: str) -> bool:
         oid = ObjectId(event_id)
     except Exception:
         return False
-    result = await _events().delete_one({"_id": oid, "creatorUid": uid})
+    result = await _events().delete_one({"_id": oid, "authorUid": uid})
     return result.deleted_count > 0
 
 

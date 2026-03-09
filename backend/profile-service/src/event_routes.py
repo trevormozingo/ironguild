@@ -25,10 +25,10 @@ router = APIRouter(prefix="/events", tags=["events"])
 
 
 def _to_response(doc: dict) -> dict:
-    """Shape a DB doc into the base.schema.json response."""
+    """Shape a DB doc into the response.schema.json response."""
     return {
         "id": str(doc["_id"]),
-        "creatorUid": doc["creatorUid"],
+        "authorUid": doc["authorUid"],
         "title": doc["title"],
         "description": doc.get("description"),
         "location": doc.get("location"),

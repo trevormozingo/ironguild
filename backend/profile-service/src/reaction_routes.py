@@ -7,7 +7,7 @@ Supported types: strong, fire, heart, smile, laugh, thumbsup, thumbsdown, angry.
 
 from fastapi import APIRouter, Header, HTTPException, Request
 
-from .database import get_reactions, remove_reaction, set_reaction
+from .database import get_reactions, remove_reaction, set_reaction, get_profile_by_id
 from .schema import validate
 
 router = APIRouter(prefix="/posts", tags=["reactions"])
@@ -22,7 +22,7 @@ async def react(post_id: str, request: Request, x_user_id: str = Header(...)):
     doc = await set_reaction(post_id, x_user_id, body["type"])
     if doc is None:
         raise HTTPException(status_code=404, detail="Post not found")
-    return {"postId": post_id, "uid": x_user_id, "type": doc["type"]}
+    return {"postId": post_id, "authorUid": x_user_id, "type": doc["type"]}
 
 
 @router.delete("/{post_id}/reactions", status_code=204)
@@ -35,4 +35,13 @@ async def unreact(post_id: str, x_user_id: str = Header(...)):
 @router.get("/{post_id}/reactions")
 async def list_reactions(post_id: str):
     reactions = await get_reactions(post_id)
+    # Resolve usernames
+    uids = list({r["authorUid"] for r in reactions})
+    profiles = {}
+    for uid in uids:
+        p = await get_profile_by_id(uid)
+        if p:
+            profiles[uid] = p.get("username", uid)
+    for r in reactions:
+        r["username"] = profiles.get(r["authorUid"], r["authorUid"])
     return {"reactions": reactions, "count": len(reactions)}

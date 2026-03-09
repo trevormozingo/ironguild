@@ -4,11 +4,15 @@
   "description": "Base reaction schema. One reaction per user per post.",
   "type": "object",
   "properties": {
+    "id": {
+      "type": "string",
+      "description": "Reaction ID (MongoDB ObjectId as string)"
+    },
     "postId": {
       "type": "string",
       "description": "Post ID (MongoDB ObjectId as string)"
     },
-    "uid": {
+    "authorUid": {
       "type": "string",
       "description": "Firebase UID of the user who reacted"
     },
@@ -27,6 +31,6 @@
       "description": "Emoji reaction type"
     }
   },
-  "required": ["postId", "uid", "type"],
+  "required": ["postId", "authorUid", "type"],
   "additionalProperties": false
 }

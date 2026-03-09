@@ -20,7 +20,7 @@ BASE = os.environ.get("SERVICE_URL", "http://localhost:8000")
 MONGO_URI = os.environ.get("MONGO_URI", "mongodb://localhost:27017")
 MONGO_DB = os.environ.get("MONGO_DB", "ironguild_test")
 
-EVENT_FIELDS = {"id", "creatorUid", "title", "description", "location",
+EVENT_FIELDS = {"id", "authorUid", "title", "description", "location",
                 "startTime", "endTime", "rrule", "invitees"}
 
 
@@ -73,7 +73,7 @@ class TestCreateEvent:
         assert r.status_code == 201
         data = r.json()
         assert set(data.keys()) == EVENT_FIELDS
-        assert data["creatorUid"] == a
+        assert data["authorUid"] == a
         assert data["title"] == "Morning Workout"
         assert data["startTime"] == "2026-04-01T08:00:00Z"
         assert data["invitees"] == []
@@ -385,7 +385,7 @@ class TestEventCascade:
         # Verify at DB level
         client = pymongo.MongoClient(MONGO_URI)
         db = client[MONGO_DB]
-        assert db.events.count_documents({"creatorUid": a}) == 0
+        assert db.events.count_documents({"authorUid": a}) == 0
         client.close()
 
     def test_delete_profile_removes_from_invitee_lists(self):

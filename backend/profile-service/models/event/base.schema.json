@@ -8,7 +8,7 @@
       "type": "string",
       "description": "Event ID (MongoDB ObjectId as string)"
     },
-    "creatorUid": {
+    "authorUid": {
       "type": "string",
       "description": "Firebase UID of the event creator"
     },

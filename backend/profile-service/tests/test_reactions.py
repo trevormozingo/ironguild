@@ -87,7 +87,7 @@ class TestSetReaction:
         assert r.status_code == 200
         data = r.json()
         assert data["postId"] == post["id"]
-        assert data["uid"] == a
+        assert data["authorUid"] == a
         assert data["type"] == "fire"
 
     def test_update_reaction(self):
@@ -179,7 +179,7 @@ class TestRemoveReaction:
         _unreact(a, post["id"])
         reactions = _get_reactions(post["id"]).json()
         assert reactions["count"] == 1
-        assert reactions["reactions"][0]["uid"] == b
+        assert reactions["reactions"][0]["authorUid"] == b
 
 
 # ── List Reactions ────────────────────────────────────────────────────
@@ -226,11 +226,11 @@ class TestReactionCascade:
         # A's reaction should be gone, B's should remain
         reactions = _get_reactions(post["id"]).json()
         assert reactions["count"] == 1
-        assert reactions["reactions"][0]["uid"] == b
+        assert reactions["reactions"][0]["authorUid"] == b
         # Verify at DB level
         client = pymongo.MongoClient(MONGO_URI)
         db = client[MONGO_DB]
-        assert db.reactions.count_documents({"uid": a}) == 0
+        assert db.reactions.count_documents({"authorUid": a}) == 0
         client.close()
 
     def test_delete_profile_removes_reactions_on_their_posts(self):
@@ -259,4 +259,4 @@ class TestReactionCascade:
         requests.delete(f"{BASE}/profile", headers=_headers(a))
         reactions = _get_reactions(post_c["id"]).json()
         assert reactions["count"] == 1
-        assert reactions["reactions"][0]["uid"] == b
+        assert reactions["reactions"][0]["authorUid"] == b

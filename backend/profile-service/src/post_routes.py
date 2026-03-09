@@ -1,8 +1,9 @@
 """
 Post routes.
 
-Response shape matches post/base.schema.json:
-  { id, authorUid, title, body, media, workout, bodyMetrics, createdAt }
+Response shape matches post/response.schema.json:
+  { id, authorUid, authorUsername, title, body, media, workout, bodyMetrics,
+    createdAt, reactionSummary, recentComments, commentCount, myReaction }
 
 Only users with an existing profile can create or delete posts.
 """
@@ -16,7 +17,7 @@ router = APIRouter(prefix="/posts", tags=["posts"])
 
 
 def _to_response(doc: dict) -> dict:
-    """Shape a DB doc into the base.schema.json response."""
+    """Shape a DB doc into the response.schema.json response."""
     resp = {
         "id": str(doc["_id"]),
         "authorUid": doc["authorUid"],
