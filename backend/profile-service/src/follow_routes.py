@@ -7,7 +7,7 @@ Both follower and target must have existing profiles.
 
 from fastapi import APIRouter, Header, HTTPException
 
-from .database import follow_user, get_followers, get_following, unfollow_user
+from .database import follow_user, get_followers, get_following, unfollow_user, get_profile_by_id
 
 router = APIRouter(prefix="/follows", tags=["follows"])
 
@@ -31,13 +31,43 @@ async def unfollow(uid: str, x_user_id: str = Header(...)):
         raise HTTPException(status_code=404, detail="Not following this user")
 
 
+async def _resolve_profiles(uids: list[str]) -> list[dict]:
+    """Resolve UIDs to minimal profile dicts."""
+    results = []
+    for uid in uids:
+        doc = await get_profile_by_id(uid)
+        if doc:
+            results.append({
+                "id": doc["_id"],
+                "username": doc["username"],
+                "displayName": doc["displayName"],
+            })
+    return results
+
+
 @router.get("/following")
 async def list_following(x_user_id: str = Header(...)):
     uids = await get_following(x_user_id)
-    return {"following": uids, "count": len(uids)}
+    profiles = await _resolve_profiles(uids)
+    return {"following": profiles, "count": len(profiles)}
 
 
 @router.get("/followers")
 async def list_followers(x_user_id: str = Header(...)):
     uids = await get_followers(x_user_id)
-    return {"followers": uids, "count": len(uids)}
+    profiles = await _resolve_profiles(uids)
+    return {"followers": profiles, "count": len(profiles)}
+
+
+@router.get("/{uid}/following")
+async def list_user_following(uid: str):
+    uids = await get_following(uid)
+    profiles = await _resolve_profiles(uids)
+    return {"following": profiles, "count": len(profiles)}
+
+
+@router.get("/{uid}/followers")
+async def list_user_followers(uid: str):
+    uids = await get_followers(uid)
+    profiles = await _resolve_profiles(uids)
+    return {"followers": profiles, "count": len(profiles)}

@@ -53,6 +53,20 @@ async def list_my_posts(
     return {"items": items, "count": len(items), "cursor": next_cursor}
 
 
+@router.get("/user/{uid}")
+async def list_user_posts(
+    uid: str,
+    x_user_id: str = Header(...),
+    limit: int = Query(default=20, ge=1, le=100),
+    cursor: str | None = Query(default=None),
+):
+    """Return a user's posts (public). Viewer UID used for myReaction."""
+    docs = await get_user_posts(uid, limit=limit, cursor=cursor, viewer_uid=x_user_id)
+    items = [_to_response(d) for d in docs]
+    next_cursor = items[-1]["createdAt"] if items else None
+    return {"items": items, "count": len(items), "cursor": next_cursor}
+
+
 @router.post("", status_code=201)
 async def create(request: Request, x_user_id: str = Header(...)):
     body = await request.json()

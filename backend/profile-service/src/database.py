@@ -191,7 +191,7 @@ async def create_post(uid: str, data: dict[str, Any]) -> dict[str, Any] | None:
 
 
 async def get_user_posts(
-    uid: str, *, limit: int = 20, cursor: str | None = None
+    uid: str, *, limit: int = 20, cursor: str | None = None, viewer_uid: str | None = None
 ) -> list[dict[str, Any]]:
     """Return posts authored by *uid*, newest first, with cursor pagination.
     Each post is enriched with reaction counts and recent comments."""
@@ -205,7 +205,15 @@ async def get_user_posts(
         .limit(limit)
     )
     posts = [doc async for doc in docs]
-    await _enrich_posts(posts, viewer_uid=uid)
+
+    # Resolve authorUsername (not stored on the post document)
+    if posts:
+        prof = await _profiles().find_one({"_id": uid}, {"username": 1})
+        author_username = prof.get("username", uid) if prof else uid
+        for p in posts:
+            p["authorUsername"] = author_username
+
+    await _enrich_posts(posts, viewer_uid=viewer_uid or uid)
     return posts
 
 

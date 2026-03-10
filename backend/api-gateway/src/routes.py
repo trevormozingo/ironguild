@@ -174,6 +174,13 @@ async def delete_post(post_id: str, request: Request):
     return await _proxy_to_service("posts", f"/{post_id}", request, uid)
 
 
+@router.get("/posts/user/{target_uid}")
+async def list_user_posts(target_uid: str, request: Request):
+    """List another user's posts — requires auth (for myReaction)."""
+    uid = _require_auth(request)
+    return await _proxy_to_service("posts", f"/user/{target_uid}", request, uid)
+
+
 # ─────────────────────────────────────────────────────────────────────
 # Follow routes — auth required
 # ─────────────────────────────────────────────────────────────────────
@@ -205,6 +212,20 @@ async def get_followers(request: Request):
     """Get the list of users who follow the caller — requires auth."""
     uid = _require_auth(request)
     return await _proxy_to_service("follows", "/followers", request, uid)
+
+
+@router.get("/follows/{target_uid}/followers")
+async def get_user_followers(target_uid: str, request: Request):
+    """Get another user's followers — auth optional."""
+    uid = _optional_auth(request)
+    return await _proxy_to_service("follows", f"/{target_uid}/followers", request, uid)
+
+
+@router.get("/follows/{target_uid}/following")
+async def get_user_following(target_uid: str, request: Request):
+    """Get another user's following list — auth optional."""
+    uid = _optional_auth(request)
+    return await _proxy_to_service("follows", f"/{target_uid}/following", request, uid)
 
 
 # ─────────────────────────────────────────────────────────────────────
