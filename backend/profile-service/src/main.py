@@ -9,6 +9,7 @@ from fastapi import FastAPI
 
 from .database import connect, disconnect
 from .routes import router
+from .storage import init_storage
 from .post_routes import router as post_router
 from .follow_routes import router as follow_router
 from .feed_routes import router as feed_router
@@ -22,6 +23,7 @@ async def lifespan(app: FastAPI):
     mongo_uri = os.getenv("MONGO_URI", "mongodb://localhost:27017")
     db_name = os.getenv("MONGO_DB", "ironguild")
     await connect(mongo_uri, db_name)
+    init_storage()
     yield
     await disconnect()
 

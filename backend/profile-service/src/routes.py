@@ -5,7 +5,7 @@ Response shapes match public.schema.json and private.schema.json exactly:
   { id, username, displayName, bio, birthday }
 """
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Header, HTTPException, Request, UploadFile, File
 
 from .database import (
     create_profile,
@@ -15,6 +15,7 @@ from .database import (
     update_profile,
 )
 from .schema import validate
+from .storage import upload_profile_photo, delete_user_media
 
 router = APIRouter(prefix="/profile", tags=["profile"])
 
@@ -89,3 +90,29 @@ async def delete(x_user_id: str = Header(...)):
     deleted = await delete_profile(x_user_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Profile not found")
+    # Clean up all media (profile photo + post images) from Storage
+    try:
+        delete_user_media(x_user_id)
+    except Exception:
+        pass  # best-effort — profile is already deleted
+
+
+@router.post("/photo")
+async def upload_photo(
+    file: UploadFile = File(...),
+    x_user_id: str = Header(...),
+):
+    """Upload or replace the user's profile photo. Returns { url }."""
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=422, detail="File must be an image")
+
+    data = await file.read()
+    if len(data) > 10 * 1024 * 1024:  # 10 MB limit
+        raise HTTPException(status_code=422, detail="File too large (max 10 MB)")
+
+    url = upload_profile_photo(x_user_id, data, file.content_type, file.filename or "photo.jpg")
+
+    # Persist the URL on the profile document
+    await update_profile(x_user_id, {"profilePhoto": url})
+
+    return {"url": url}

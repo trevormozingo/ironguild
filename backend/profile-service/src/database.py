@@ -164,6 +164,7 @@ async def create_post(uid: str, data: dict[str, Any]) -> dict[str, Any] | None:
                 "media": data.get("media"),
                 "workout": data.get("workout"),
                 "bodyMetrics": data.get("bodyMetrics"),
+                "storagePostId": data.get("storagePostId"),
                 "createdAt": now,
             }
             result = await _posts().insert_one(doc, session=session)
@@ -282,23 +283,27 @@ async def _enrich_posts(posts: list[dict[str, Any]], viewer_uid: str | None = No
         doc["commentCount"] = comment_count_map.get(pid, 0)
 
 
-async def delete_post(post_id: str, uid: str) -> bool:
-    """Delete a post and its feed/reactions/comments atomically. Only the author can delete."""
+async def delete_post(post_id: str, uid: str) -> dict | None:
+    """
+    Delete a post and its feed/reactions/comments atomically.
+    Only the author can delete.
+    Returns the deleted post document (for storage cleanup), or None.
+    """
     try:
         oid = ObjectId(post_id)
     except Exception:
-        return False
+        return None
     async with await _client.start_session() as session:
         async with session.start_transaction():
-            result = await _posts().delete_one(
+            doc = await _posts().find_one_and_delete(
                 {"_id": oid, "authorUid": uid}, session=session
             )
-            if result.deleted_count == 0:
-                return False
+            if doc is None:
+                return None
             await _feed().delete_many({"postId": oid}, session=session)
             await _reactions().delete_many({"postId": oid}, session=session)
             await _comments().delete_many({"postId": oid}, session=session)
-            return True
+            return doc
 
 
 # ── Follows ───────────────────────────────────────────────────────────

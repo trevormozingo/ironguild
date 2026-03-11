@@ -142,6 +142,13 @@ async def delete_my_profile(request: Request):
     return await _proxy_to_service("profile", "", request, uid)
 
 
+@router.post("/profile/photo")
+async def upload_profile_photo(request: Request):
+    """Upload or replace the caller's profile photo — requires auth."""
+    uid = _require_auth(request)
+    return await _proxy_to_service("profile", "/photo", request, uid)
+
+
 @router.get("/profile/{username}")
 async def get_public_profile(username: str, request: Request):
     """Get a public profile by username — no auth required."""
@@ -172,6 +179,13 @@ async def delete_post(post_id: str, request: Request):
     """Delete a post — requires auth."""
     uid = _require_auth(request)
     return await _proxy_to_service("posts", f"/{post_id}", request, uid)
+
+
+@router.post("/posts/media")
+async def upload_post_media(request: Request):
+    """Upload media files for a new post — requires auth."""
+    uid = _require_auth(request)
+    return await _proxy_to_service("posts", "/media", request, uid)
 
 
 @router.get("/posts/user/{target_uid}")

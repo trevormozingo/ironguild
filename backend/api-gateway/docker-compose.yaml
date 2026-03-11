@@ -43,8 +43,14 @@ services:
     environment:
       MONGO_URI: mongodb://mongodb:27017/?replicaSet=rs0&directConnection=true
       MONGO_DB: ironguild_test
+      FIREBASE_PROJECT_ID: ironguild-local
+      FIREBASE_STORAGE_BUCKET: ironguild-local.appspot.com
+      STORAGE_EMULATOR_HOST: http://firebase-emulator:9199
+      STORAGE_PUBLIC_HOST: http://192.168.1.16:9199
     depends_on:
       mongodb:
+        condition: service_healthy
+      firebase-emulator:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]

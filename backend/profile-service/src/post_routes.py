@@ -8,10 +8,12 @@ Response shape matches post/response.schema.json:
 Only users with an existing profile can create or delete posts.
 """
 
-from fastapi import APIRouter, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Header, HTTPException, Query, Request, UploadFile, File
+from typing import List
 
 from .database import create_post, delete_post, get_user_posts
 from .schema import validate
+from .storage import upload_post_media, generate_post_id, delete_post_media
 
 router = APIRouter(prefix="/posts", tags=["posts"])
 
@@ -81,6 +83,48 @@ async def create(request: Request, x_user_id: str = Header(...)):
 
 @router.delete("/{post_id}", status_code=204)
 async def delete(post_id: str, x_user_id: str = Header(...)):
-    deleted = await delete_post(post_id, x_user_id)
-    if not deleted:
+    doc = await delete_post(post_id, x_user_id)
+    if not doc:
         raise HTTPException(status_code=404, detail="Post not found or not owned by you")
+    # Clean up media files from Storage
+    storage_post_id = doc.get("storagePostId")
+    if storage_post_id:
+        try:
+            delete_post_media(x_user_id, storage_post_id)
+        except Exception:
+            pass  # best-effort
+
+
+@router.post("/media", status_code=201)
+async def upload_media(
+    files: List[UploadFile] = File(...),
+    x_user_id: str = Header(...),
+):
+    """
+    Upload post media files before creating the post.
+
+    Returns { postId, media: [{ url, mimeType }, ...] }.
+    The postId should be included as storagePostId when creating the post
+    so the backend can clean up storage on post deletion.
+    """
+    if len(files) > 10:
+        raise HTTPException(status_code=422, detail="Maximum 10 files allowed")
+
+    post_id = generate_post_id()
+    results = []
+
+    for index, file in enumerate(files):
+        data = await file.read()
+        if len(data) > 20 * 1024 * 1024:  # 20 MB per file
+            raise HTTPException(
+                status_code=422,
+                detail=f"File {file.filename} too large (max 20 MB)",
+            )
+
+        content_type = file.content_type or "application/octet-stream"
+        item = upload_post_media(
+            x_user_id, post_id, index, data, content_type, file.filename or f"media_{index}"
+        )
+        results.append(item)
+
+    return {"postId": post_id, "media": results}
