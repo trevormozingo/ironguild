@@ -20,6 +20,7 @@ Requirements:
 
 import argparse
 import hashlib
+import math
 import os
 import random
 import sys
@@ -52,6 +53,23 @@ ACTIVITY_TYPES = [
 REACTION_TYPES = ["strong", "fire", "heart", "smile", "laugh",
                   "thumbsup", "thumbsdown", "angry"]
 
+# Bay Area cities/towns within ~100 miles of SF for realistic labels
+_BAY_AREA_CITIES = [
+    "San Francisco, CA", "Oakland, CA", "San Jose, CA", "Berkeley, CA",
+    "Palo Alto, CA", "Mountain View, CA", "Sunnyvale, CA", "Fremont, CA",
+    "Santa Clara, CA", "Redwood City, CA", "San Mateo, CA", "Daly City, CA",
+    "Hayward, CA", "Concord, CA", "Walnut Creek, CA", "Pleasanton, CA",
+    "Santa Rosa, CA", "Napa, CA", "Vallejo, CA", "Richmond, CA",
+    "San Rafael, CA", "Novato, CA", "Petaluma, CA", "Sausalito, CA",
+    "Mill Valley, CA", "Livermore, CA", "Dublin, CA", "Milpitas, CA",
+    "Cupertino, CA", "Campbell, CA", "Los Gatos, CA", "Saratoga, CA",
+    "Half Moon Bay, CA", "Pacifica, CA", "San Leandro, CA", "Alameda, CA",
+    "Union City, CA", "Newark, CA", "Foster City, CA", "Burlingame, CA",
+    "San Carlos, CA", "Menlo Park, CA", "Los Altos, CA", "Gilroy, CA",
+    "Morgan Hill, CA", "Santa Cruz, CA", "Monterey, CA", "Stockton, CA",
+    "Modesto, CA", "Sacramento, CA",
+]
+
 POST_TITLES = [
     "Morning run", "Leg day", "New PR!", "Rest day vibes", "Chest & back",
     "HIIT session", "Yoga flow", "5K personal best", "First day back",
@@ -59,6 +77,28 @@ POST_TITLES = [
     "Hill sprints", "Recovery day", "Deadlift PR", "Squat day",
     "Cardio blast", "Swimming laps", "Boxing class",
 ]
+
+
+# ── Location helpers ─────────────────────────────────────────────────
+
+def random_location_near_sf() -> dict:
+    """Return a GeoJSON-style location dict within 100 miles of SF."""
+    SF_LAT, SF_LNG = 37.7749, -122.4194
+    MAX_MILES = 100
+
+    # sqrt for uniform distribution across circular area
+    dist = MAX_MILES * math.sqrt(random.random())
+    bearing = random.uniform(0, 2 * math.pi)
+
+    lat_offset = (dist * math.cos(bearing)) / 69.0
+    lng_offset = (dist * math.sin(bearing)) / (69.0 * math.cos(math.radians(SF_LAT)))
+
+    return {
+        "type": "Point",
+        "coordinates": [round(SF_LNG + lng_offset, 6),
+                        round(SF_LAT + lat_offset, 6)],
+        "label": random.choice(_BAY_AREA_CITIES),
+    }
 
 
 # ── Firebase token helpers ───────────────────────────────────────────
@@ -193,6 +233,16 @@ def create_profile(gateway: str, token: str, username: str,
     return resp.json()
 
 
+def update_profile_location(gateway: str, token: str, location: dict):
+    """PATCH the user's profile with a location."""
+    resp = requests.patch(
+        f"{gateway}/profile",
+        json={"location": location},
+        headers={**_hdr(token), "Content-Type": "application/json"},
+    )
+    return resp.status_code == 200
+
+
 def create_post(gateway: str, token: str):
     body: dict = {"title": random.choice(POST_TITLES)}
     if random.random() < 0.7:
@@ -250,6 +300,7 @@ def seed_one_user(idx: int, gateway: str, emulator_host: str):
         uid, token = create_firebase_user(emulator_host, email)
         create_profile(gateway, token, username, display_name)
         upload_profile_photo(gateway, token, display_name)
+        update_profile_location(gateway, token, random_location_near_sf())
         return uid, token, username
     except Exception as e:
         print(f"  [!] user #{idx}: {e}", file=sys.stderr)
