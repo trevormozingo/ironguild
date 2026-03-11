@@ -35,13 +35,18 @@ async def unreact(post_id: str, x_user_id: str = Header(...)):
 @router.get("/{post_id}/reactions")
 async def list_reactions(post_id: str):
     reactions = await get_reactions(post_id)
-    # Resolve usernames
+    # Resolve usernames and profile photos
     uids = list({r["authorUid"] for r in reactions})
-    profiles = {}
+    profile_data = {}
     for uid in uids:
         p = await get_profile_by_id(uid)
         if p:
-            profiles[uid] = p.get("username", uid)
+            profile_data[uid] = {
+                "username": p.get("username", uid),
+                "profilePhoto": p.get("profilePhoto"),
+            }
     for r in reactions:
-        r["username"] = profiles.get(r["authorUid"], r["authorUid"])
+        info = profile_data.get(r["authorUid"], {})
+        r["username"] = info.get("username", r["authorUid"])
+        r["profilePhoto"] = info.get("profilePhoto")
     return {"reactions": reactions, "count": len(reactions)}

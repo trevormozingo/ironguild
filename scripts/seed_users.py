@@ -19,16 +19,24 @@ Requirements:
 """
 
 import argparse
+import hashlib
 import os
 import random
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from io import BytesIO
 
 import firebase_admin
 from firebase_admin import auth as fb_auth
 import requests
 from faker import Faker
+
+try:
+    from PIL import Image, ImageDraw, ImageFont
+    _HAS_PIL = True
+except ImportError:
+    _HAS_PIL = False
 
 fake = Faker()
 
@@ -73,6 +81,80 @@ def get_id_token_for_uid(emulator_host: str, uid: str) -> str:
     )
     resp.raise_for_status()
     return resp.json()["idToken"]
+
+
+# ── Profile-photo helpers ────────────────────────────────────────────
+
+# Curated background colours for generated avatars
+_AVATAR_COLORS = [
+    (56, 116, 203),   # blue
+    (218, 78, 68),    # red
+    (74, 172, 104),   # green
+    (246, 166, 35),   # orange
+    (142, 68, 204),   # purple
+    (230, 74, 152),   # pink
+    (44, 183, 187),   # teal
+    (96, 96, 96),     # grey
+]
+
+
+def _generate_avatar(display_name: str, size: int = 256) -> bytes:
+    """
+    Generate a simple avatar PNG: coloured circle with the user's
+    initials.  If Pillow is not installed, download from ui-avatars.com.
+    """
+    initials = "".join(
+        part[0].upper() for part in display_name.split() if part
+    )[:2] or "?"
+
+    if _HAS_PIL:
+        # Deterministic colour based on name
+        idx = int(hashlib.md5(display_name.encode()).hexdigest(), 16)
+        bg = _AVATAR_COLORS[idx % len(_AVATAR_COLORS)]
+
+        img = Image.new("RGB", (size, size), bg)
+        draw = ImageDraw.Draw(img)
+
+        # Use a built-in font; scale roughly to image size
+        try:
+            font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", size // 3)
+        except (OSError, IOError):
+            font = ImageFont.load_default()
+
+        bbox = draw.textbbox((0, 0), initials, font=font)
+        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        draw.text(
+            ((size - tw) / 2, (size - th) / 2 - bbox[1]),
+            initials, fill="white", font=font,
+        )
+
+        buf = BytesIO()
+        img.save(buf, format="PNG")
+        return buf.getvalue()
+
+    # Fallback: fetch from ui-avatars.com
+    resp = requests.get(
+        "https://ui-avatars.com/api/",
+        params={"name": display_name, "size": str(size),
+                "background": "random", "color": "fff", "format": "png"},
+        timeout=10,
+    )
+    resp.raise_for_status()
+    return resp.content
+
+
+def upload_profile_photo(gateway: str, token: str, display_name: str):
+    """Generate an avatar and upload it as the user's profile photo."""
+    try:
+        data = _generate_avatar(display_name)
+        resp = requests.post(
+            f"{gateway}/profile/photo",
+            files={"file": ("avatar.png", data, "image/png")},
+            headers=_hdr(token),
+        )
+        return resp.status_code == 200
+    except Exception:
+        return False
 
 
 # ── REST helpers ─────────────────────────────────────────────────────
@@ -167,6 +249,7 @@ def seed_one_user(idx: int, gateway: str, emulator_host: str):
     try:
         uid, token = create_firebase_user(emulator_host, email)
         create_profile(gateway, token, username, display_name)
+        upload_profile_photo(gateway, token, display_name)
         return uid, token, username
     except Exception as e:
         print(f"  [!] user #{idx}: {e}", file=sys.stderr)

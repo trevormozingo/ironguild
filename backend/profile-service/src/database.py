@@ -207,12 +207,14 @@ async def get_user_posts(
     )
     posts = [doc async for doc in docs]
 
-    # Resolve authorUsername (not stored on the post document)
+    # Resolve authorUsername and profilePhoto (not stored on the post document)
     if posts:
-        prof = await _profiles().find_one({"_id": uid}, {"username": 1})
+        prof = await _profiles().find_one({"_id": uid}, {"username": 1, "profilePhoto": 1})
         author_username = prof.get("username", uid) if prof else uid
+        author_photo = prof.get("profilePhoto") if prof else None
         for p in posts:
             p["authorUsername"] = author_username
+            p["authorProfilePhoto"] = author_photo
 
     await _enrich_posts(posts, viewer_uid=viewer_uid or uid)
     return posts
@@ -256,6 +258,7 @@ async def _enrich_posts(posts: list[dict[str, Any]], viewer_uid: str | None = No
                 "id": {"$toString": "$_id"},
                 "authorUid": "$authorUid",
                 "authorUsername": {"$ifNull": ["$authorUsername", "$authorUid"]},
+                "authorProfilePhoto": "$authorProfilePhoto",
                 "body": "$body",
                 "createdAt": "$createdAt",
             }},
@@ -409,16 +412,19 @@ async def get_feed(
     # Return in feed order, skip any posts that were somehow deleted
     posts = [posts_by_id[pid] for pid in post_ids if pid in posts_by_id]
 
-    # Resolve author usernames
+    # Resolve author usernames and profile photos
     author_uids = list({p["authorUid"] for p in posts})
     profiles_cursor = _profiles().find(
-        {"_id": {"$in": author_uids}}, {"_id": 1, "username": 1}
+        {"_id": {"$in": author_uids}}, {"_id": 1, "username": 1, "profilePhoto": 1}
     )
     username_map: dict[str, str] = {}
+    photo_map: dict[str, str | None] = {}
     async for prof in profiles_cursor:
         username_map[prof["_id"]] = prof.get("username", prof["_id"])
+        photo_map[prof["_id"]] = prof.get("profilePhoto")
     for p in posts:
         p["authorUsername"] = username_map.get(p["authorUid"], p["authorUid"])
+        p["authorProfilePhoto"] = photo_map.get(p["authorUid"])
 
     await _enrich_posts(posts, viewer_uid=uid)
     return posts
@@ -525,6 +531,7 @@ async def create_comment(
                 "postId": oid,
                 "authorUid": uid,
                 "authorUsername": profile.get("username", uid),
+                "authorProfilePhoto": profile.get("profilePhoto"),
                 "body": data["body"],
                 "createdAt": now,
             }
@@ -559,7 +566,21 @@ async def get_comments(
         except Exception:
             pass
     comments_cursor = _comments().find(query).sort("_id", 1).limit(limit)
-    return [doc async for doc in comments_cursor]
+    comments = [doc async for doc in comments_cursor]
+
+    # Resolve profile photos for comment authors
+    if comments:
+        author_uids = list({c["authorUid"] for c in comments})
+        prof_cursor = _profiles().find(
+            {"_id": {"$in": author_uids}}, {"_id": 1, "profilePhoto": 1}
+        )
+        photo_map: dict[str, str | None] = {}
+        async for prof in prof_cursor:
+            photo_map[prof["_id"]] = prof.get("profilePhoto")
+        for c in comments:
+            c["authorProfilePhoto"] = photo_map.get(c["authorUid"])
+
+    return comments
 
 
 # ── Events ──────────────────────────────────────────────────────────────

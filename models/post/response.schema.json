@@ -11,6 +11,11 @@
       "type": "string",
       "description": "Username of the post author (resolved at query time)"
     },
+    "authorProfilePhoto": {
+      "type": ["string", "null"],
+      "format": "uri",
+      "description": "Profile photo URL of the post author (resolved at query time)"
+    },
     "reactionSummary": {
       "type": "object",
       "additionalProperties": {

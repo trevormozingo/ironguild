@@ -10,6 +10,11 @@
     "authorUsername": {
       "type": "string",
       "description": "Username of the comment author (resolved at query time)"
+    },
+    "authorProfilePhoto": {
+      "type": ["string", "null"],
+      "format": "uri",
+      "description": "Profile photo URL of the comment author (resolved at query time)"
     }
   }
 }

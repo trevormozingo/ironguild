@@ -41,6 +41,7 @@ async def _resolve_profiles(uids: list[str]) -> list[dict]:
                 "id": doc["_id"],
                 "username": doc["username"],
                 "displayName": doc["displayName"],
+                "profilePhoto": doc.get("profilePhoto"),
             })
     return results
 

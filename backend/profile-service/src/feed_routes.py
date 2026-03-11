@@ -18,6 +18,7 @@ def _to_post(doc: dict) -> dict:
         "id": str(doc["_id"]),
         "authorUid": doc["authorUid"],
         "authorUsername": doc.get("authorUsername"),
+        "authorProfilePhoto": doc.get("authorProfilePhoto"),
         "title": doc.get("title"),
         "body": doc.get("body"),
         "media": doc.get("media"),

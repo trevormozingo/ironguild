@@ -23,6 +23,7 @@ def _to_response(doc: dict) -> dict:
     resp = {
         "id": str(doc["_id"]),
         "authorUid": doc["authorUid"],
+        "authorProfilePhoto": doc.get("authorProfilePhoto"),
         "title": doc.get("title"),
         "body": doc.get("body"),
         "media": doc.get("media"),

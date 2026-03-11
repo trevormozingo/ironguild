@@ -10,6 +10,11 @@
     "username": {
       "type": "string",
       "description": "Username of the user who reacted (resolved at query time)"
+    },
+    "profilePhoto": {
+      "type": ["string", "null"],
+      "format": "uri",
+      "description": "Profile photo URL of the user who reacted (resolved at query time)"
     }
   }
 }
