@@ -1,0 +1,48 @@
+{
+  "expo": {
+    "name": "Iron Guild",
+    "slug": "iron-guild",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "ironguild",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.ironguild.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Iron Guild needs camera access to take photos and videos for your posts.",
+        "NSPhotoLibraryUsageDescription": "Iron Guild needs photo library access to attach photos and videos to your posts."
+      }
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Iron Guild needs camera access to take photos and videos for your posts.",
+          "photosPermission": "Iron Guild needs photo library access to attach photos and videos to your posts."
+        }
+      ],
+      [
+        "@kingstinct/react-native-healthkit",
+        {
+          "NSHealthShareUsageDescription": "Iron Guild reads your workouts from Apple Health so you can share them with the guild.",
+          "NSHealthUpdateUsageDescription": false
+        }
+      ],
+      "@react-native-community/datetimepicker"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "android": {
+      "package": "com.ironguild.app"
+    }
+  }
+}
