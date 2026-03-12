@@ -37,12 +37,15 @@ async def _resolve_profiles(uids: list[str]) -> list[dict]:
     for uid in uids:
         doc = await get_profile_by_id(uid)
         if doc:
-            results.append({
+            entry: dict = {
                 "id": doc["_id"],
                 "username": doc["username"],
                 "displayName": doc["displayName"],
                 "profilePhoto": doc.get("profilePhoto"),
-            })
+            }
+            if doc.get("location"):
+                entry["location"] = doc["location"]
+            results.append(entry)
     return results
 
 

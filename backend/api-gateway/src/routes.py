@@ -149,6 +149,13 @@ async def upload_profile_photo(request: Request):
     return await _proxy_to_service("profile", "/photo", request, uid)
 
 
+@router.get("/profile/nearby")
+async def nearby_profiles(request: Request):
+    """Find profiles near a coordinate — requires auth."""
+    uid = _require_auth(request)
+    return await _proxy_to_service("profile", "/nearby", request, uid)
+
+
 @router.get("/profile/{username}")
 async def get_public_profile(username: str, request: Request):
     """Get a public profile by username — no auth required."""

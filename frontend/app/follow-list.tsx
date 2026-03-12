@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { ActivityIndicator, FlatList, Image, Pressable, StyleSheet, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { GradientScreen, Text, colors, spacing } from '@/components/ui';
-import { getIdToken } from '@/services/auth';
+import { getIdToken, getUid } from '@/services/auth';
 import { config } from '@/config';
 
 type FollowUser = {
@@ -11,7 +11,26 @@ type FollowUser = {
   username: string;
   displayName: string;
   profilePhoto?: string | null;
+  location?: { coordinates?: [number, number]; label?: string | null } | null;
 };
+
+/** Haversine distance in miles between two [lng, lat] points. */
+function distanceMiles(a: [number, number], b: [number, number]): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const [lng1, lat1] = a;
+  const [lng2, lat2] = b;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const s =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 3958.8 * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
+}
+
+function formatDistance(miles: number): string {
+  if (miles < 1) return '< 1 mi';
+  return `${Math.round(miles)} mi`;
+}
 
 type Tab = 'followers' | 'following';
 
@@ -24,6 +43,39 @@ export default function FollowListScreen() {
   const [followers, setFollowers] = useState<FollowUser[]>([]);
   const [following, setFollowing] = useState<FollowUser[]>([]);
   const [loading, setLoading] = useState(true);
+  const [myFollowingSet, setMyFollowingSet] = useState<Set<string>>(new Set());
+  const [followLoadingIds, setFollowLoadingIds] = useState<Set<string>>(new Set());
+  const [myLocation, setMyLocation] = useState<[number, number] | null>(null);
+
+  /** Toggle follow / unfollow for a user */
+  const toggleFollow = useCallback(async (targetUid: string) => {
+    setFollowLoadingIds((prev) => new Set(prev).add(targetUid));
+    try {
+      const token = getIdToken();
+      const isFollowing = myFollowingSet.has(targetUid);
+      const method = isFollowing ? 'DELETE' : 'POST';
+      const res = await fetch(`${config.apiBaseUrl}/follows/${targetUid}`, {
+        method,
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (res.ok || res.status === 201 || res.status === 204) {
+        setMyFollowingSet((prev) => {
+          const next = new Set(prev);
+          if (isFollowing) next.delete(targetUid);
+          else next.add(targetUid);
+          return next;
+        });
+      }
+    } catch {
+      // ignore
+    } finally {
+      setFollowLoadingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(targetUid);
+        return next;
+      });
+    }
+  }, [myFollowingSet]);
 
   useEffect(() => {
     (async () => {
@@ -38,9 +90,11 @@ export default function FollowListScreen() {
         const followingUrl = uid
           ? `${config.apiBaseUrl}/follows/${uid}/following`
           : `${config.apiBaseUrl}/follows/following`;
-        const [followersRes, followingRes] = await Promise.all([
+        const [followersRes, followingRes, myFollowingRes, profileRes] = await Promise.all([
           fetch(followersUrl, { headers }),
           fetch(followingUrl, { headers }),
+          fetch(`${config.apiBaseUrl}/follows/following`, { headers }),
+          fetch(`${config.apiBaseUrl}/profile`, { headers }),
         ]);
         if (followersRes.ok) {
           const data = await followersRes.json();
@@ -49,6 +103,17 @@ export default function FollowListScreen() {
         if (followingRes.ok) {
           const data = await followingRes.json();
           setFollowing(data.following);
+        }
+        if (myFollowingRes.ok) {
+          const data = await myFollowingRes.json();
+          const ids = (data.following as { id: string }[]).map((u) => u.id);
+          setMyFollowingSet(new Set(ids));
+        }
+        if (profileRes.ok) {
+          const profile = await profileRes.json();
+          if (profile.location?.coordinates) {
+            setMyLocation(profile.location.coordinates);
+          }
         }
       } catch {
         // ignore
@@ -60,27 +125,65 @@ export default function FollowListScreen() {
 
   const data = tab === 'followers' ? followers : following;
 
-  const renderItem = ({ item }: { item: FollowUser }) => (
-    <Pressable
-      style={styles.userRow}
-      onPress={() => router.push(`/user/${item.username}` as any)}
-    >
-      {item.profilePhoto ? (
-        <Image source={{ uri: item.profilePhoto }} style={styles.avatar} />
-      ) : (
-        <View style={styles.avatarFallback}>
-          <Text style={styles.avatarText}>
-            {item.displayName.charAt(0).toUpperCase()}
-          </Text>
+  const renderItem = ({ item }: { item: FollowUser }) => {
+    const dist =
+      myLocation && item.location?.coordinates
+        ? distanceMiles(myLocation, item.location.coordinates)
+        : null;
+    const isFollowing = myFollowingSet.has(item.id);
+    const isLoadingFollow = followLoadingIds.has(item.id);
+
+    return (
+      <Pressable
+        style={styles.userRow}
+        onPress={() => router.push(`/user/${item.username}` as any)}
+      >
+        {item.profilePhoto ? (
+          <Image source={{ uri: item.profilePhoto }} style={styles.avatar} />
+        ) : (
+          <View style={styles.avatarFallback}>
+            <Text style={styles.avatarText}>
+              {item.displayName.charAt(0).toUpperCase()}
+            </Text>
+          </View>
+        )}
+        <View style={styles.userInfo}>
+          <Text style={styles.displayName}>{item.displayName}</Text>
+          <Text muted>@{item.username}</Text>
+          {(item.location?.label || dist != null) && (
+            <View style={styles.locationRow}>
+              {item.location?.label && (
+                <>
+                  <Ionicons name="location-outline" size={12} color={colors.mutedForeground} />
+                  <Text muted style={styles.locationText}>{item.location.label}</Text>
+                </>
+              )}
+              {dist != null && (
+                <Text muted style={styles.locationText}>
+                  {item.location?.label ? ' · ' : ''}{formatDistance(dist)}
+                </Text>
+              )}
+            </View>
+          )}
         </View>
-      )}
-      <View style={styles.userInfo}>
-        <Text style={styles.displayName}>{item.displayName}</Text>
-        <Text muted>@{item.username}</Text>
-      </View>
-      <Ionicons name="chevron-forward" size={20} color={colors.mutedForeground} />
-    </Pressable>
-  );
+        {item.id !== getUid() && (
+          <Pressable
+            style={[styles.followBtn, isFollowing && styles.followBtnActive]}
+            onPress={() => toggleFollow(item.id)}
+            disabled={isLoadingFollow}
+          >
+            {isLoadingFollow ? (
+              <ActivityIndicator size="small" color={isFollowing ? colors.foreground : colors.primaryForeground} />
+            ) : (
+              <Text style={[styles.followBtnText, isFollowing && styles.followBtnTextActive]}>
+                {isFollowing ? 'Following' : 'Follow'}
+              </Text>
+            )}
+          </Pressable>
+        )}
+      </Pressable>
+    );
+  };
 
   return (
     <GradientScreen>
@@ -219,6 +322,36 @@ const styles = StyleSheet.create({
   },
   displayName: {
     fontWeight: '600',
+    color: colors.foreground,
+  },
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    marginTop: 2,
+  },
+  locationText: {
+    fontSize: 12,
+  },
+  followBtn: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: 8,
+    minWidth: 80,
+    alignItems: 'center',
+  },
+  followBtnActive: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  followBtnText: {
+    color: colors.primaryForeground,
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  followBtnTextActive: {
     color: colors.foreground,
   },
 });

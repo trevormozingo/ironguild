@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { ActivityIndicator, Alert, FlatList, Image, Pressable, StyleSheet, View } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { useRouter } from 'expo-router';
@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { GradientScreen, Text, colors, spacing } from '@/components/ui';
 import { LocationPicker } from '@/components/LocationPicker';
-import { getIdToken } from '@/services/auth';
+import { getIdToken, getUid } from '@/services/auth';
 import { config } from '@/config';
 
 type NearbyUser = {
@@ -14,8 +14,26 @@ type NearbyUser = {
   username: string;
   displayName: string;
   profilePhoto?: string | null;
-  location?: { label?: string | null } | null;
+  location?: { coordinates?: [number, number]; label?: string | null } | null;
 };
+
+/** Haversine distance in miles between two [lng, lat] points. */
+function distanceMiles(a: [number, number], b: [number, number]): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const [lng1, lat1] = a;
+  const [lng2, lat2] = b;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const s =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 3958.8 * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
+}
+
+function formatDistance(miles: number): string {
+  if (miles < 1) return '< 1 mi';
+  return `${Math.round(miles)} mi`;
+}
 
 export default function FriendsScreen() {
   const router = useRouter();
@@ -27,6 +45,55 @@ export default function FriendsScreen() {
   const [settingLocation, setSettingLocation] = useState(false);
   const [profileLocation, setProfileLocation] = useState<{ coordinates: [number, number]; label?: string | null } | null>(null);
   const [mapPickerVisible, setMapPickerVisible] = useState(false);
+  const [followingSet, setFollowingSet] = useState<Set<string>>(new Set());
+  const [followLoadingIds, setFollowLoadingIds] = useState<Set<string>>(new Set());
+
+  /** Fetch the set of user IDs the current user follows */
+  const loadFollowing = useCallback(async () => {
+    try {
+      const token = getIdToken();
+      const res = await fetch(`${config.apiBaseUrl}/follows/following`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const ids = (data.following as { id: string }[]).map((u) => u.id);
+        setFollowingSet(new Set(ids));
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  /** Toggle follow / unfollow for a user */
+  const toggleFollow = useCallback(async (uid: string) => {
+    setFollowLoadingIds((prev) => new Set(prev).add(uid));
+    try {
+      const token = getIdToken();
+      const isFollowing = followingSet.has(uid);
+      const method = isFollowing ? 'DELETE' : 'POST';
+      const res = await fetch(`${config.apiBaseUrl}/follows/${uid}`, {
+        method,
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (res.ok || res.status === 201 || res.status === 204) {
+        setFollowingSet((prev) => {
+          const next = new Set(prev);
+          if (isFollowing) next.delete(uid);
+          else next.add(uid);
+          return next;
+        });
+      }
+    } catch {
+      // ignore
+    } finally {
+      setFollowLoadingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(uid);
+        return next;
+      });
+    }
+  }, [followingSet]);
 
   /** Fetch the user's profile to get their saved location */
   const loadProfileLocation = useCallback(async (): Promise<{ coordinates: [number, number]; label?: string | null } | null> => {
@@ -77,13 +144,14 @@ export default function FriendsScreen() {
   const fetchNearby = useCallback(async () => {
     setLoading(true);
     const loc = profileLocation ?? await loadProfileLocation();
+    loadFollowing();
     if (loc?.coordinates) {
       await fetchNearbyWithCoords(loc.coordinates[0], loc.coordinates[1]);
     } else {
       setLoading(false);
       setNeedsLocation(true);
     }
-  }, [profileLocation, loadProfileLocation, fetchNearbyWithCoords]);
+  }, [profileLocation, loadProfileLocation, fetchNearbyWithCoords, loadFollowing]);
 
   /** Use GPS to set location on the profile, then search */
   const setLocationFromGPS = async () => {
@@ -129,30 +197,61 @@ export default function FriendsScreen() {
     fetchNearby();
   }, [fetchNearby]);
 
-  const renderUser = ({ item }: { item: NearbyUser }) => (
-    <Pressable
-      style={styles.userRow}
-      onPress={() => router.push(`/user/${item.username}` as any)}
-    >
-      {item.profilePhoto ? (
-        <Image source={{ uri: item.profilePhoto }} style={styles.avatar} />
-      ) : (
-        <View style={styles.avatarFallback}>
-          <Text style={styles.avatarText}>{item.displayName.charAt(0).toUpperCase()}</Text>
-        </View>
-      )}
-      <View style={styles.userInfo}>
-        <Text style={styles.displayName}>{item.displayName}</Text>
-        <Text muted>@{item.username}</Text>
-        {item.location?.label && (
-          <View style={styles.locationRow}>
-            <Ionicons name="location-outline" size={12} color={colors.mutedForeground} />
-            <Text muted style={styles.locationText}>{item.location.label}</Text>
+  const renderUser = ({ item }: { item: NearbyUser }) => {
+    const dist =
+      profileLocation?.coordinates && item.location?.coordinates
+        ? distanceMiles(profileLocation.coordinates, item.location.coordinates)
+        : null;
+    const isFollowing = followingSet.has(item.id);
+    const isLoadingFollow = followLoadingIds.has(item.id);
+
+    return (
+      <Pressable
+        style={styles.userRow}
+        onPress={() => router.push(`/user/${item.username}` as any)}
+      >
+        {item.profilePhoto ? (
+          <Image source={{ uri: item.profilePhoto }} style={styles.avatar} />
+        ) : (
+          <View style={styles.avatarFallback}>
+            <Text style={styles.avatarText}>{item.displayName.charAt(0).toUpperCase()}</Text>
           </View>
         )}
-      </View>
-    </Pressable>
-  );
+        <View style={styles.userInfo}>
+          <Text style={styles.displayName}>{item.displayName}</Text>
+          <Text muted>@{item.username}</Text>
+          <View style={styles.locationRow}>
+            {item.location?.label && (
+              <>
+                <Ionicons name="location-outline" size={12} color={colors.mutedForeground} />
+                <Text muted style={styles.locationText}>{item.location.label}</Text>
+              </>
+            )}
+            {dist != null && (
+              <Text muted style={styles.locationText}>
+                {item.location?.label ? ' · ' : ''}{formatDistance(dist)}
+              </Text>
+            )}
+          </View>
+        </View>
+        {item.id !== getUid() && (
+          <Pressable
+            style={[styles.followBtn, isFollowing && styles.followBtnActive]}
+            onPress={() => toggleFollow(item.id)}
+            disabled={isLoadingFollow}
+          >
+            {isLoadingFollow ? (
+              <ActivityIndicator size="small" color={isFollowing ? colors.foreground : colors.primaryForeground} />
+            ) : (
+              <Text style={[styles.followBtnText, isFollowing && styles.followBtnTextActive]}>
+                {isFollowing ? 'Following' : 'Follow'}
+              </Text>
+            )}
+          </Pressable>
+        )}
+      </Pressable>
+    );
+  };
 
   return (
     <GradientScreen>
@@ -390,5 +489,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
     opacity: 0.85,
+  },
+  followBtn: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: 8,
+    minWidth: 80,
+    alignItems: 'center',
+  },
+  followBtnActive: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  followBtnText: {
+    color: colors.primaryForeground,
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  followBtnTextActive: {
+    color: colors.foreground,
   },
 });
