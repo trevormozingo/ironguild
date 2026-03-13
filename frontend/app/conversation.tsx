@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { GradientScreen, Text, colors, spacing, fonts, fontSizes, radii } from '@/components/ui';
 import { getUid, getIdToken } from '@/services/auth';
 import { sendMessage, subscribeToMessages, type Message } from '@/services/messaging';
+import { sendPushToUsers } from '@/services/notifications';
 import { config } from '@/config';
 
 export default function ConversationScreen() {
@@ -33,9 +34,10 @@ export default function ConversationScreen() {
   const otherUids = (otherUid ?? '').split(',').filter(Boolean);
   const isGroup = otherUids.length > 1;
 
-  // Resolve participant usernames
+  // Resolve participant usernames (including self, for push notification title)
   useEffect(() => {
     if (otherUids.length === 0) return;
+    const allUids = myUid ? [...otherUids, myUid] : otherUids;
     (async () => {
       const token = getIdToken();
       const headers: Record<string, string> = token
@@ -43,7 +45,7 @@ export default function ConversationScreen() {
         : {};
       const names: Record<string, string> = {};
       await Promise.all(
-        otherUids.map(async (uid) => {
+        allUids.map(async (uid) => {
           try {
             const res = await fetch(`${config.apiBaseUrl}/profile/uid/${uid}`, { headers });
             if (res.ok) {
@@ -78,12 +80,20 @@ export default function ConversationScreen() {
     setText('');
     try {
       await sendMessage(conversationId, myUid, trimmed);
+      // Send push notification to other participants (fire-and-forget)
+      const myName = participantNames[myUid] || 'Someone';
+      sendPushToUsers(
+        otherUids,
+        myName,
+        trimmed,
+        { conversationId, otherUid: myUid },
+      );
     } catch {
       setText(trimmed); // Restore on failure
     } finally {
       setSending(false);
     }
-  }, [text, conversationId, myUid, sending]);
+  }, [text, conversationId, myUid, sending, otherUids, participantNames]);
 
   const renderMessage = useCallback(
     ({ item }: { item: Message }) => {

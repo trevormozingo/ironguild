@@ -91,6 +91,34 @@ async def search_profiles(query: str, limit: int = 10) -> list[dict[str, Any]]:
     return await cursor.to_list(length=limit)
 
 
+async def add_push_token(uid: str, token: str) -> None:
+    """Add an Expo push token to the user's profile (idempotent)."""
+    await _profiles().update_one(
+        {"_id": uid},
+        {"$addToSet": {"expoPushTokens": token}},
+    )
+
+
+async def remove_push_token(uid: str, token: str) -> None:
+    """Remove an Expo push token from the user's profile."""
+    await _profiles().update_one(
+        {"_id": uid},
+        {"$pull": {"expoPushTokens": token}},
+    )
+
+
+async def get_push_tokens(uids: list[str]) -> list[str]:
+    """Return all Expo push tokens for the given UIDs."""
+    cursor = _profiles().find(
+        {"_id": {"$in": uids}, "expoPushTokens": {"$exists": True}},
+        {"expoPushTokens": 1},
+    )
+    tokens: list[str] = []
+    async for doc in cursor:
+        tokens.extend(doc.get("expoPushTokens", []))
+    return tokens
+
+
 async def update_profile(uid: str, data: dict[str, Any]) -> dict[str, Any] | None:
     """Update only the provided fields (from update.schema.json)."""
     return await _profiles().find_one_and_update(

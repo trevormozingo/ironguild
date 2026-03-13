@@ -1,7 +1,40 @@
-import { Stack } from 'expo-router';
+import { useEffect, useRef } from 'react';
+import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { registerForPushNotifications, addNotificationResponseListener } from '@/services/notifications';
+import { getUid } from '@/services/auth';
+import type { EventSubscription } from 'expo-notifications';
 
 export default function RootLayout() {
+  const router = useRouter();
+  const notifListenerRef = useRef<EventSubscription>();
+
+  useEffect(() => {
+    // Register for push notifications once the user is authenticated
+    const uid = getUid();
+    if (uid) {
+      registerForPushNotifications();
+    }
+
+    // Handle notification taps → navigate to conversation
+    notifListenerRef.current = addNotificationResponseListener((response) => {
+      const data = response.notification.request.content.data;
+      if (data?.conversationId && data?.otherUid) {
+        router.push({
+          pathname: '/conversation',
+          params: {
+            conversationId: data.conversationId as string,
+            otherUid: data.otherUid as string,
+          },
+        });
+      }
+    });
+
+    return () => {
+      notifListenerRef.current?.remove();
+    };
+  }, []);
+
   return (
     <>
       <StatusBar style="dark" />

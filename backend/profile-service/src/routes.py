@@ -8,11 +8,14 @@ Response shapes match public.schema.json and private.schema.json exactly:
 from fastapi import APIRouter, Header, HTTPException, Query, Request, UploadFile, File
 
 from .database import (
+    add_push_token,
     create_profile,
     delete_profile,
     get_nearby_profiles,
     get_profile_by_id,
     get_profile_by_username,
+    get_push_tokens,
+    remove_push_token,
     search_profiles,
     update_profile,
 )
@@ -88,6 +91,60 @@ async def nearby(
     """Find profiles near a coordinate. Excludes the requesting user."""
     docs = await get_nearby_profiles(lng, lat, radius_km=radius, limit=limit, exclude_uid=x_user_id)
     return {"items": [_to_public(d) for d in docs], "count": len(docs)}
+
+
+@router.put("/push-token")
+async def register_push_token(request: Request, x_user_id: str = Header(...)):
+    body = await request.json()
+    token = body.get("token")
+    if not token or not isinstance(token, str):
+        raise HTTPException(status_code=422, detail="Missing 'token' string")
+    await add_push_token(x_user_id, token)
+    return {"ok": True}
+
+
+@router.delete("/push-token")
+async def unregister_push_token(request: Request, x_user_id: str = Header(...)):
+    body = await request.json()
+    token = body.get("token")
+    if not token or not isinstance(token, str):
+        raise HTTPException(status_code=422, detail="Missing 'token' string")
+    await remove_push_token(x_user_id, token)
+    return {"ok": True}
+
+
+@router.post("/send-push")
+async def send_push(request: Request, x_user_id: str = Header(...)):
+    """Send push notifications to a list of recipient UIDs."""
+    import httpx
+    body = await request.json()
+    recipient_uids: list[str] = body.get("recipientUids", [])
+    title: str = body.get("title", "")
+    message_body: str = body.get("body", "")
+    data: dict = body.get("data", {})
+    if not recipient_uids:
+        return {"sent": 0}
+    tokens = await get_push_tokens(recipient_uids)
+    if not tokens:
+        return {"sent": 0}
+    # Build Expo push messages
+    messages = [
+        {
+            "to": t,
+            "sound": "default",
+            "title": title,
+            "body": message_body,
+            "data": data,
+        }
+        for t in tokens
+    ]
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            "https://exp.host/--/api/v2/push/send",
+            json=messages,
+            headers={"Content-Type": "application/json"},
+        )
+    return {"sent": len(messages), "status": resp.status_code}
 
 
 @router.get("/search")

@@ -43,6 +43,13 @@
         {
           "locationWhenInUsePermission": "Fervora uses your location to find nearby users and show your city on your profile."
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#F5515F"
+        }
       ]
     ],
     "experiments": {

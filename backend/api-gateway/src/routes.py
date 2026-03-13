@@ -156,6 +156,27 @@ async def nearby_profiles(request: Request):
     return await _proxy_to_service("profile", "/nearby", request, uid)
 
 
+@router.put("/profile/push-token")
+async def register_push_token(request: Request):
+    """Register an Expo push token — requires auth."""
+    uid = _require_auth(request)
+    return await _proxy_to_service("profile", "/push-token", request, uid)
+
+
+@router.delete("/profile/push-token")
+async def unregister_push_token(request: Request):
+    """Remove an Expo push token — requires auth."""
+    uid = _require_auth(request)
+    return await _proxy_to_service("profile", "/push-token", request, uid)
+
+
+@router.post("/profile/send-push")
+async def send_push(request: Request):
+    """Send push notifications to recipients — requires auth."""
+    uid = _require_auth(request)
+    return await _proxy_to_service("profile", "/send-push", request, uid)
+
+
 @router.get("/profile/search")
 async def search_profiles(request: Request):
     """Search profiles by username prefix — no auth required."""
