@@ -1,12 +1,12 @@
-import { useState, useCallback } from 'react';
+import { useCallback } from 'react';
 import { ActivityIndicator, FlatList, Image, Pressable, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { GradientScreen, Text, colors, spacing, fonts, fontSizes, radii } from '@/components/ui';
-import { getIdToken } from '@/services/auth';
 import { setScrollToPostIntent } from '@/services/scrollToPost';
-import { config } from '@/config';
+import { apiFetch } from '@/services/api';
 
 interface Notification {
   id: string;
@@ -27,40 +27,29 @@ const TYPE_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
 
 export default function NotificationsScreen() {
   const router = useRouter();
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
 
-  const fetchNotifications = useCallback(async () => {
-    try {
-      const token = getIdToken();
-      const res = await fetch(`${config.apiBaseUrl}/profile/notifications?limit=50`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setNotifications(data.items);
-      }
-    } catch {}
-    setLoading(false);
-  }, []);
+  const { data: notifications = [], isLoading } = useQuery({
+    queryKey: ['notifications'],
+    queryFn: async () => {
+      const data = await apiFetch<{ items: Notification[] }>('/profile/notifications?limit=50');
+      return data.items;
+    },
+  });
 
-  const markAllRead = useCallback(async () => {
-    try {
-      const token = getIdToken();
-      await fetch(`${config.apiBaseUrl}/profile/notifications/mark-read`, {
-        method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-    } catch {}
-  }, []);
-
+  // Mark all as read on focus
   useFocusEffect(
     useCallback(() => {
-      fetchNotifications();
-      // Mark all as read when viewing
-      markAllRead();
-    }, [])
+      (async () => {
+        try {
+          await apiFetch('/profile/notifications/mark-read', { method: 'POST' });
+          queryClient.setQueryData<Notification[]>(['notifications'], (old) =>
+            old?.map((n) => ({ ...n, read: true }))
+          );
+          queryClient.setQueryData(['unreadNotifCount'], { count: 0 });
+        } catch {}
+      })();
+    }, [queryClient])
   );
 
   const formatTime = (iso: string) => {
@@ -143,7 +132,7 @@ export default function NotificationsScreen() {
         <Text style={styles.headerTitle}>Notifications</Text>
         <View style={{ width: 28 }} />
       </View>
-      {loading ? (
+      {isLoading ? (
         <View style={styles.center}>
           <ActivityIndicator color={colors.primary} />
         </View>

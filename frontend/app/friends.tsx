@@ -6,8 +6,8 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { GradientScreen, Text, colors, spacing, radii } from '@/components/ui';
 import { LocationPicker } from '@/components/LocationPicker';
-import { getIdToken, getUid } from '@/services/auth';
-import { config } from '@/config';
+import { getUid } from '@/services/auth';
+import { apiFetch } from '@/services/api';
 
 type NearbyUser = {
   id: string;
@@ -51,15 +51,8 @@ export default function FriendsScreen() {
   /** Fetch the set of user IDs the current user follows */
   const loadFollowing = useCallback(async () => {
     try {
-      const token = getIdToken();
-      const res = await fetch(`${config.apiBaseUrl}/follows/following`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const ids = (data.following as { id: string }[]).map((u) => u.id);
-        setFollowingSet(new Set(ids));
-      }
+      const data = await apiFetch<{ following: { id: string }[] }>('/follows/following');
+      setFollowingSet(new Set(data.following.map((u) => u.id)));
     } catch {
       // ignore
     }
@@ -69,21 +62,15 @@ export default function FriendsScreen() {
   const toggleFollow = useCallback(async (uid: string) => {
     setFollowLoadingIds((prev) => new Set(prev).add(uid));
     try {
-      const token = getIdToken();
       const isFollowing = followingSet.has(uid);
       const method = isFollowing ? 'DELETE' : 'POST';
-      const res = await fetch(`${config.apiBaseUrl}/follows/${uid}`, {
-        method,
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      await apiFetch(`/follows/${uid}`, { method });
+      setFollowingSet((prev) => {
+        const next = new Set(prev);
+        if (isFollowing) next.delete(uid);
+        else next.add(uid);
+        return next;
       });
-      if (res.ok || res.status === 201 || res.status === 204) {
-        setFollowingSet((prev) => {
-          const next = new Set(prev);
-          if (isFollowing) next.delete(uid);
-          else next.add(uid);
-          return next;
-        });
-      }
     } catch {
       // ignore
     } finally {
@@ -98,15 +85,10 @@ export default function FriendsScreen() {
   /** Fetch the user's profile to get their saved location */
   const loadProfileLocation = useCallback(async (): Promise<{ coordinates: [number, number]; label?: string | null } | null> => {
     try {
-      const token = getIdToken();
-      const res = await fetch(`${config.apiBaseUrl}/profile`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (!res.ok) return null;
-      const profile = await res.json();
+      const profile = await apiFetch<{ location?: { coordinates?: [number, number]; label?: string | null } }>('/profile');
       if (profile.location?.coordinates) {
-        setProfileLocation(profile.location);
-        return profile.location;
+        setProfileLocation(profile.location as any);
+        return profile.location as any;
       }
       return null;
     } catch {
@@ -120,18 +102,8 @@ export default function FriendsScreen() {
     setError(null);
     setNeedsLocation(false);
     try {
-      const token = getIdToken();
       const radiusKm = Math.round(radiusMiles * 1.60934);
-      const params = new URLSearchParams({
-        lng: String(lng),
-        lat: String(lat),
-        radius: String(radiusKm),
-      });
-      const res = await fetch(`${config.apiBaseUrl}/profile/nearby?${params}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (!res.ok) throw new Error('Failed to fetch nearby users');
-      const data = await res.json();
+      const data = await apiFetch<{ items: NearbyUser[] }>(`/profile/nearby?lng=${lng}&lat=${lat}&radius=${radiusKm}`);
       setUsers(data.items ?? []);
     } catch (err: any) {
       setError(err.message ?? 'Something went wrong');
@@ -170,13 +142,9 @@ export default function FriendsScreen() {
       const label = geo ? [geo.city, geo.region].filter(Boolean).join(', ') : null;
 
       // Save to profile
-      const token = getIdToken();
-      await fetch(`${config.apiBaseUrl}/profile`, {
+      await apiFetch('/profile', {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ location: { type: 'Point', coordinates: coords, label } }),
       });
 
@@ -350,13 +318,9 @@ export default function FriendsScreen() {
           try {
             setSettingLocation(true);
             // Save to profile
-            const token = getIdToken();
-            await fetch(`${config.apiBaseUrl}/profile`, {
+            await apiFetch('/profile', {
               method: 'PATCH',
-              headers: {
-                'Content-Type': 'application/json',
-                ...(token ? { Authorization: `Bearer ${token}` } : {}),
-              },
+              headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ location: { type: 'Point', coordinates: loc.coordinates, label: loc.label } }),
             });
             const saved = { coordinates: loc.coordinates, label: loc.label };

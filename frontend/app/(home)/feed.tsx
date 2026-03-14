@@ -1,93 +1,73 @@
 import { useState, useCallback } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useFocusEffect } from '@react-navigation/native';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { GradientScreen, Text, colors, spacing, radii } from '@/components/ui';
 import { PostCard, type Post } from '@/components/PostCard';
-import { getIdToken } from '@/services/auth';
-import { config } from '@/config';
+import { apiFetch } from '@/services/api';
+
+type FeedPage = { items: Post[]; cursor: string | null; count: number };
 
 export default function FeedScreen() {
   const router = useRouter();
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
+  const queryClient = useQueryClient();
+  const [extraPosts, setExtraPosts] = useState<Post[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
-  const [unreadNotifs, setUnreadNotifs] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
 
-  const fetchUnreadCount = useCallback(async () => {
-    try {
-      const token = getIdToken();
-      const res = await fetch(`${config.apiBaseUrl}/profile/notifications/unread-count`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setUnreadNotifs(data.count);
-      }
-    } catch {}
-  }, []);
+  // ── Initial feed load (cached, stale-while-revalidate) ──
+  const { data: feedData, isLoading, isRefetching } = useQuery({
+    queryKey: ['feed'],
+    queryFn: async () => {
+      const data = await apiFetch<FeedPage>('/feed?limit=20');
+      // Reset pagination state when initial page refreshes
+      setCursor(data.cursor);
+      setHasMore(data.count === 20);
+      setExtraPosts([]);
+      return data;
+    },
+  });
 
-  const fetchPosts = useCallback(async (cursorVal?: string | null) => {
-    if (loading) return;
-    setLoading(true);
+  const posts = [...(feedData?.items ?? []), ...extraPosts];
+
+  // ── Unread notification count (cached) ──
+  const { data: unreadData } = useQuery({
+    queryKey: ['unreadNotifCount'],
+    queryFn: () => apiFetch<{ count: number }>('/profile/notifications/unread-count'),
+  });
+  const unreadNotifs = unreadData?.count ?? 0;
+
+  // ── Pagination (append beyond first page) ──
+  const loadMore = useCallback(async () => {
+    if (!hasMore || loadingMore || !cursor) return;
+    setLoadingMore(true);
     try {
-      const token = getIdToken();
-      const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
-      const params = new URLSearchParams({ limit: '20' });
-      if (cursorVal) params.set('cursor', cursorVal);
-      const res = await fetch(`${config.apiBaseUrl}/feed?${params}`, { headers });
-      if (res.ok) {
-        const data = await res.json();
-        setPosts((prev) => (cursorVal ? [...prev, ...data.items] : data.items));
-        setCursor(data.cursor);
-        setHasMore(data.count === 20);
-      }
+      const data = await apiFetch<FeedPage>(`/feed?limit=20&cursor=${cursor}`);
+      setExtraPosts((prev) => [...prev, ...data.items]);
+      setCursor(data.cursor);
+      setHasMore(data.count === 20);
     } catch {
       // ignore
     } finally {
-      setLoading(false);
+      setLoadingMore(false);
     }
-  }, [loading]);
+  }, [hasMore, loadingMore, cursor]);
 
-  useFocusEffect(
-    useCallback(() => {
-      fetchPosts();
-      fetchUnreadCount();
-    }, [])
-  );
-
+  // ── Pull-to-refresh ──
   const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    setCursor(null);
-    setHasMore(true);
-    try {
-      const token = getIdToken();
-      const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
-      const res = await fetch(`${config.apiBaseUrl}/feed?limit=20`, { headers });
-      if (res.ok) {
-        const data = await res.json();
-        setPosts(data.items);
-        setCursor(data.cursor);
-        setHasMore(data.count === 20);
-      }
-    } catch {
-      // ignore
-    } finally {
-      setRefreshing(false);
-    }
-  }, []);
-
-  const loadMore = () => {
-    if (hasMore && !loading && cursor) {
-      fetchPosts(cursor);
-    }
-  };
+    await queryClient.invalidateQueries({ queryKey: ['feed'] });
+    queryClient.invalidateQueries({ queryKey: ['unreadNotifCount'] });
+  }, [queryClient]);
 
   const handlePostChanged = (updated: Post) => {
-    setPosts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+    // Update in query cache
+    queryClient.setQueryData<FeedPage>(['feed'], (old) =>
+      old ? { ...old, items: old.items.map((p) => (p.id === updated.id ? updated : p)) } : old
+    );
+    // Update in extra pages
+    setExtraPosts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
   };
 
   return (
@@ -127,18 +107,18 @@ export default function FeedScreen() {
         )}
         onEndReached={loadMore}
         onEndReachedThreshold={0.5}
-        refreshing={refreshing}
+        refreshing={isRefetching}
         onRefresh={onRefresh}
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={
-          !loading ? (
+          !isLoading ? (
             <View style={styles.emptyState}>
               <Text muted>No posts in your feed yet. Follow some people!</Text>
             </View>
           ) : null
         }
         ListFooterComponent={
-          loading ? <ActivityIndicator style={styles.footerLoader} color={colors.primary} /> : null
+          isLoading || loadingMore ? <ActivityIndicator style={styles.footerLoader} color={colors.primary} /> : null
         }
       />
     </GradientScreen>

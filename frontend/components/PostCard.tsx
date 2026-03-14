@@ -1123,12 +1123,14 @@ const styles = StyleSheet.create({
   },
   workoutStats: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     gap: spacing.lg,
     paddingTop: spacing.xs,
   },
   workoutStat: {
     alignItems: 'center',
+    minWidth: 40,
   },
   workoutStatValue: {
     fontSize: 22,

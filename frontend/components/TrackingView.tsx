@@ -1,10 +1,10 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useMemo } from 'react';
 import { ActivityIndicator, Dimensions, StyleSheet, View } from 'react-native';
 import { LineChart } from 'react-native-gifted-charts';
+import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { Text, colors, spacing, radii } from '@/components/ui';
-import { getIdToken } from '@/services/auth';
-import { config } from '@/config';
+import { apiFetch } from '@/services/api';
 
 const SCREEN_W = Dimensions.get('window').width;
 const Y_AXIS_W = 40;
@@ -29,13 +29,17 @@ type BodyMetricsEntry = {
   leanBodyMassLbs?: number | null;
 };
 
-type TrackingData = {
+export type TrackingData = {
   workouts: WorkoutEntry[];
   bodyMetrics: BodyMetricsEntry[];
 };
 
 type Props = {
   uid: string;
+  /** Pre-fetched data — if provided, skips internal fetch */
+  data?: TrackingData | null;
+  /** External loading state (paired with data prop) */
+  loading?: boolean;
 };
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -198,30 +202,18 @@ function ChartCard({
 
 // ── TrackingView ────────────────────────────────────────────────────
 
-export function TrackingView({ uid }: Props) {
-  const [data, setData] = useState<TrackingData | null>(null);
-  const [loading, setLoading] = useState(true);
+export function TrackingView({ uid, data: externalData, loading: externalLoading }: Props) {
+  // Use external data if provided, otherwise fetch via useQuery
+  const managed = externalData !== undefined;
 
-  const fetchTracking = useCallback(async () => {
-    setLoading(true);
-    try {
-      const token = getIdToken();
-      const res = await fetch(`${config.apiBaseUrl}/posts/user/${uid}/tracking`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (res.ok) {
-        setData(await res.json());
-      }
-    } catch {
-      // ignore
-    } finally {
-      setLoading(false);
-    }
-  }, [uid]);
+  const { data: queryData, isLoading: queryLoading } = useQuery({
+    queryKey: ['tracking', uid],
+    queryFn: () => apiFetch<TrackingData>(`/posts/user/${uid}/tracking`),
+    enabled: !managed,
+  });
 
-  useEffect(() => {
-    fetchTracking();
-  }, [fetchTracking]);
+  const data = managed ? externalData : (queryData ?? null);
+  const loading = managed ? (externalLoading ?? false) : queryLoading;
 
   // ── Derive chart data (hooks before early returns) ──
   const workouts = useMemo(() => data?.workouts ?? [], [data]);

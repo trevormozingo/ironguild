@@ -2,58 +2,62 @@ import { useState, useCallback } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { GradientScreen, Text, colors, spacing } from '@/components/ui';
 import { ProfileView, type ProfileData } from '@/components/ProfileView';
 import { type Post } from '@/components/PostCard';
-import { getIdToken } from '@/services/auth';
 import { consumeScrollToPostIntent } from '@/services/scrollToPost';
-import { config } from '@/config';
+import { apiFetch } from '@/services/api';
+
+type ProfileBundle = {
+  profile: ProfileData;
+  followersCount: number;
+  followingCount: number;
+};
+type PostsPage = { items: Post[]; cursor: string | null; count: number };
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const [profile, setProfile] = useState<ProfileData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [followersCount, setFollowersCount] = useState(0);
-  const [followingCount, setFollowingCount] = useState(0);
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [postsLoading, setPostsLoading] = useState(false);
+  const queryClient = useQueryClient();
+  const [extraPosts, setExtraPosts] = useState<Post[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [scrollToPostId, setScrollToPostId] = useState<string | null>(null);
   const [scrollToPostSection, setScrollToPostSection] = useState<'comments' | 'reactions' | null>(null);
   const [scrollToReactionType, setScrollToReactionType] = useState<string | undefined>(undefined);
 
-  const fetchProfile = useCallback(async () => {
-    try {
-      const token = getIdToken();
-      const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
-      const [profileRes, followersRes, followingRes] = await Promise.all([
-        fetch(`${config.apiBaseUrl}/profile`, { headers }),
-        fetch(`${config.apiBaseUrl}/follows/followers`, { headers }),
-        fetch(`${config.apiBaseUrl}/follows/following`, { headers }),
+  // ── Profile + follow counts (cached) ──
+  const { data: profileBundle, isLoading } = useQuery({
+    queryKey: ['myProfile'],
+    queryFn: async () => {
+      const [profile, followers, following] = await Promise.all([
+        apiFetch<ProfileData>('/profile'),
+        apiFetch<{ count: number }>('/follows/followers'),
+        apiFetch<{ count: number }>('/follows/following'),
       ]);
-      if (profileRes.ok) {
-        setProfile(await profileRes.json());
-      }
-      if (followersRes.ok) {
-        const data = await followersRes.json();
-        setFollowersCount(data.count);
-      }
-      if (followingRes.ok) {
-        const data = await followingRes.json();
-        setFollowingCount(data.count);
-      }
-    } catch {
-      // ignore
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      return { profile, followersCount: followers.count, followingCount: following.count };
+    },
+  });
 
+  // ── Own posts (cached first page) ──
+  const { data: postsData, isLoading: postsLoading } = useQuery({
+    queryKey: ['myPosts'],
+    queryFn: async () => {
+      const data = await apiFetch<PostsPage>('/posts?limit=20');
+      setCursor(data.cursor);
+      setHasMore(data.count === 20);
+      setExtraPosts([]);
+      return data;
+    },
+  });
+
+  const posts = [...(postsData?.items ?? []), ...extraPosts];
+
+  // ── Check for scroll-to-post intent on focus ──
   useFocusEffect(
     useCallback(() => {
-      // Check for scroll-to-post intent from notification tap
       const intent = consumeScrollToPostIntent();
       if (intent) {
         setScrollToPostId(intent.postId);
@@ -64,59 +68,45 @@ export default function ProfileScreen() {
         setScrollToPostSection(null);
         setScrollToReactionType(undefined);
       }
-      fetchProfile();
-      fetchPosts();
     }, [])
   );
 
-  const fetchPosts = useCallback(async (cursorVal?: string | null) => {
-    if (postsLoading) return;
-    setPostsLoading(true);
+  // ── Pagination ──
+  const loadMore = useCallback(async () => {
+    if (!hasMore || loadingMore || !cursor) return;
+    setLoadingMore(true);
     try {
-      const token = getIdToken();
-      const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
-      const params = new URLSearchParams({ limit: '20' });
-      if (cursorVal) params.set('cursor', cursorVal);
-      const res = await fetch(`${config.apiBaseUrl}/posts?${params}`, { headers });
-      if (res.ok) {
-        const data = await res.json();
-        setPosts((prev) => (cursorVal ? [...prev, ...data.items] : data.items));
-        setCursor(data.cursor);
-        setHasMore(data.count === 20);
-      }
+      const data = await apiFetch<PostsPage>(`/posts?limit=20&cursor=${cursor}`);
+      setExtraPosts((prev) => [...prev, ...data.items]);
+      setCursor(data.cursor);
+      setHasMore(data.count === 20);
     } catch {
       // ignore
     } finally {
-      setPostsLoading(false);
+      setLoadingMore(false);
     }
-  }, [postsLoading]);
-
-  const loadMore = () => {
-    if (hasMore && !postsLoading && cursor) {
-      fetchPosts(cursor);
-    }
-  };
+  }, [hasMore, loadingMore, cursor]);
 
   const handlePostChanged = (updated: Post) => {
-    setPosts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+    queryClient.setQueryData<PostsPage>(['myPosts'], (old) =>
+      old ? { ...old, items: old.items.map((p) => (p.id === updated.id ? updated : p)) } : old
+    );
+    setExtraPosts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
   };
 
   const handleDeletePost = async (postId: string) => {
     try {
-      const token = getIdToken();
-      const res = await fetch(`${config.apiBaseUrl}/posts/${postId}`, {
-        method: 'DELETE',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (res.ok || res.status === 204) {
-        setPosts((prev) => prev.filter((p) => p.id !== postId));
-      }
+      await apiFetch(`/posts/${postId}`, { method: 'DELETE' });
+      queryClient.setQueryData<PostsPage>(['myPosts'], (old) =>
+        old ? { ...old, items: old.items.filter((p) => p.id !== postId) } : old
+      );
+      setExtraPosts((prev) => prev.filter((p) => p.id !== postId));
     } catch {
       // ignore
     }
   };
 
-  if (loading) {
+  if (isLoading) {
     return (
       <GradientScreen transparent>
         <View style={styles.center}>
@@ -144,12 +134,12 @@ export default function ProfileScreen() {
       </View>
 
       <ProfileView
-        profile={profile}
-        followersCount={followersCount}
-        followingCount={followingCount}
+        profile={profileBundle?.profile ?? null}
+        followersCount={profileBundle?.followersCount ?? 0}
+        followingCount={profileBundle?.followingCount ?? 0}
         isOwnProfile
         posts={posts}
-        postsLoading={postsLoading}
+        postsLoading={postsLoading || loadingMore}
         onLoadMore={loadMore}
         onPostChanged={handlePostChanged}
         onDeletePost={handleDeletePost}

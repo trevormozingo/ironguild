@@ -1,10 +1,11 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { ActivityIndicator, FlatList, Image, Pressable, StyleSheet, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { GradientScreen, Text, colors, spacing, radii } from '@/components/ui';
-import { getIdToken, getUid } from '@/services/auth';
-import { config } from '@/config';
+import { getUid } from '@/services/auth';
+import { apiFetch } from '@/services/api';
 
 type FollowUser = {
   id: string;
@@ -42,7 +43,6 @@ export default function FollowListScreen() {
   );
   const [followers, setFollowers] = useState<FollowUser[]>([]);
   const [following, setFollowing] = useState<FollowUser[]>([]);
-  const [loading, setLoading] = useState(true);
   const [myFollowingSet, setMyFollowingSet] = useState<Set<string>>(new Set());
   const [followLoadingIds, setFollowLoadingIds] = useState<Set<string>>(new Set());
   const [myLocation, setMyLocation] = useState<[number, number] | null>(null);
@@ -51,21 +51,15 @@ export default function FollowListScreen() {
   const toggleFollow = useCallback(async (targetUid: string) => {
     setFollowLoadingIds((prev) => new Set(prev).add(targetUid));
     try {
-      const token = getIdToken();
       const isFollowing = myFollowingSet.has(targetUid);
       const method = isFollowing ? 'DELETE' : 'POST';
-      const res = await fetch(`${config.apiBaseUrl}/follows/${targetUid}`, {
-        method,
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      await apiFetch(`/follows/${targetUid}`, { method });
+      setMyFollowingSet((prev) => {
+        const next = new Set(prev);
+        if (isFollowing) next.delete(targetUid);
+        else next.add(targetUid);
+        return next;
       });
-      if (res.ok || res.status === 201 || res.status === 204) {
-        setMyFollowingSet((prev) => {
-          const next = new Set(prev);
-          if (isFollowing) next.delete(targetUid);
-          else next.add(targetUid);
-          return next;
-        });
-      }
     } catch {
       // ignore
     } finally {
@@ -77,51 +71,26 @@ export default function FollowListScreen() {
     }
   }, [myFollowingSet]);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const token = getIdToken();
-        const headers: Record<string, string> = token
-          ? { Authorization: `Bearer ${token}` }
-          : {};
-        const followersUrl = uid
-          ? `${config.apiBaseUrl}/follows/${uid}/followers`
-          : `${config.apiBaseUrl}/follows/followers`;
-        const followingUrl = uid
-          ? `${config.apiBaseUrl}/follows/${uid}/following`
-          : `${config.apiBaseUrl}/follows/following`;
-        const [followersRes, followingRes, myFollowingRes, profileRes] = await Promise.all([
-          fetch(followersUrl, { headers }),
-          fetch(followingUrl, { headers }),
-          fetch(`${config.apiBaseUrl}/follows/following`, { headers }),
-          fetch(`${config.apiBaseUrl}/profile`, { headers }),
-        ]);
-        if (followersRes.ok) {
-          const data = await followersRes.json();
-          setFollowers(data.followers);
-        }
-        if (followingRes.ok) {
-          const data = await followingRes.json();
-          setFollowing(data.following);
-        }
-        if (myFollowingRes.ok) {
-          const data = await myFollowingRes.json();
-          const ids = (data.following as { id: string }[]).map((u) => u.id);
-          setMyFollowingSet(new Set(ids));
-        }
-        if (profileRes.ok) {
-          const profile = await profileRes.json();
-          if (profile.location?.coordinates) {
-            setMyLocation(profile.location.coordinates);
-          }
-        }
-      } catch {
-        // ignore
-      } finally {
-        setLoading(false);
+  const { isLoading } = useQuery({
+    queryKey: ['followList', uid ?? 'me'],
+    queryFn: async () => {
+      const followersUrl = uid ? `/follows/${uid}/followers` : '/follows/followers';
+      const followingUrl = uid ? `/follows/${uid}/following` : '/follows/following';
+      const [followersData, followingData, myFollowingData, profileData] = await Promise.all([
+        apiFetch<{ followers: FollowUser[] }>(followersUrl),
+        apiFetch<{ following: FollowUser[] }>(followingUrl),
+        apiFetch<{ following: { id: string }[] }>('/follows/following'),
+        apiFetch<{ location?: { coordinates?: [number, number] } }>('/profile'),
+      ]);
+      setFollowers(followersData.followers);
+      setFollowing(followingData.following);
+      setMyFollowingSet(new Set(myFollowingData.following.map((u) => u.id)));
+      if (profileData.location?.coordinates) {
+        setMyLocation(profileData.location.coordinates);
       }
-    })();
-  }, []);
+      return true;
+    },
+  });
 
   const data = tab === 'followers' ? followers : following;
 
@@ -222,7 +191,7 @@ export default function FollowListScreen() {
         </Pressable>
       </View>
 
-      {loading ? (
+      {isLoading ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>

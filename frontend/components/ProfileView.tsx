@@ -5,8 +5,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { Text, colors, spacing, radii } from '@/components/ui';
 import { PostCard, type Post } from '@/components/PostCard';
 import { TrackingView } from '@/components/TrackingView';
-import { getIdToken } from '@/services/auth';
-import { config } from '@/config';
 
 export type ProfileData = {
   id: string;
@@ -185,6 +183,14 @@ export function ProfileView({
     <Text muted>Could not load profile.</Text>
   );
 
+  // ── Derived post stats ──
+  const totalPosts = posts.length;
+  const totalReactions = posts.reduce(
+    (sum, p) => sum + Object.values(p.reactionSummary ?? {}).reduce((a, b) => a + b, 0),
+    0,
+  );
+  const totalComments = posts.reduce((sum, p) => sum + (p.commentCount ?? 0), 0);
+
   const renderHeader = () => (
     <View>
       <View style={styles.profileHeader}>{profileHeaderContent}</View>
@@ -217,6 +223,26 @@ export function ProfileView({
           </Text>
         </Pressable>
       </View>
+
+      {/* ── Posts Summary Banner ── */}
+      {activeTab === 'posts' && totalPosts > 0 && (
+        <View style={styles.postsSummaryRow}>
+          <View style={styles.postsSummaryItem}>
+            <Text style={styles.postsSummaryValue}>{totalPosts}</Text>
+            <Text style={styles.postsSummaryLabel}>Posts</Text>
+          </View>
+          <View style={styles.postsSummaryDivider} />
+          <View style={styles.postsSummaryItem}>
+            <Text style={styles.postsSummaryValue}>{totalReactions}</Text>
+            <Text style={styles.postsSummaryLabel}>Reactions</Text>
+          </View>
+          <View style={styles.postsSummaryDivider} />
+          <View style={styles.postsSummaryItem}>
+            <Text style={styles.postsSummaryValue}>{totalComments}</Text>
+            <Text style={styles.postsSummaryLabel}>Comments</Text>
+          </View>
+        </View>
+      )}
     </View>
   );
 
@@ -265,9 +291,10 @@ export function ProfileView({
         ListEmptyComponent={
           !postsLoading ? (
             <View style={styles.emptyState}>
-              <Text muted>
+              <Ionicons name="document-text-outline" size={48} color={colors.border} />
+              <Text muted style={{ marginTop: spacing.md, textAlign: 'center' }}>
                 {isOwnProfile
-                  ? 'No posts yet. Share your first workout!'
+                  ? 'No posts yet.\nShare your first workout!'
                   : 'No posts yet.'}
               </Text>
             </View>
@@ -484,5 +511,44 @@ const styles = StyleSheet.create({
   },
   tabTextActive: {
     color: colors.foreground,
+  },
+  // ── Posts Summary Banner ──
+  postsSummaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    paddingVertical: spacing.md,
+    marginBottom: spacing.md,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.4)',
+    backgroundColor: 'rgba(255,255,255,0.6)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  postsSummaryItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  postsSummaryValue: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: colors.foreground,
+  },
+  postsSummaryLabel: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: colors.mutedForeground,
+    marginTop: 2,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  postsSummaryDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: colors.border,
   },
 });
