@@ -5,6 +5,8 @@ import { GradientScreen, Text, colors, spacing } from '@/components/ui';
 import { ProfileForm, type ProfileFormData } from '@/components/ProfileForm';
 import { getIdToken } from '@/services/auth';
 import { uploadProfilePhoto } from '@/services/storage';
+import { registerForPushNotifications } from '@/services/notifications';
+import { startUnreadListener } from '@/services/unread';
 import { config } from '@/config';
 
 export default function CreateProfileScreen() {
@@ -50,6 +52,8 @@ export default function CreateProfileScreen() {
         throw new Error(body.detail ?? `Failed to create profile (${res.status})`);
       }
 
+      registerForPushNotifications().catch(() => {});
+      startUnreadListener();
       router.replace('/(home)/feed');
     } catch (err: any) {
       Alert.alert('Error', err.message ?? 'Something went wrong');

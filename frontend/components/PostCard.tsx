@@ -1174,6 +1174,7 @@ const styles = StyleSheet.create({
   },
   metricsStats: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     gap: spacing.lg,
     paddingTop: spacing.xs,
