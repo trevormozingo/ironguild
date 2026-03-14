@@ -11,7 +11,7 @@ Only users with an existing profile can create or delete posts.
 from fastapi import APIRouter, Header, HTTPException, Query, Request, UploadFile, File
 from typing import List
 
-from .database import create_post, delete_post, get_user_posts, get_post_by_id
+from .database import create_post, delete_post, get_user_posts, get_post_by_id, get_user_tracking
 from .schema import validate
 from .storage import upload_post_media, generate_post_id, delete_post_media
 
@@ -68,6 +68,17 @@ async def list_user_posts(
     items = [_to_response(d) for d in docs]
     next_cursor = items[-1]["createdAt"] if items else None
     return {"items": items, "count": len(items), "cursor": next_cursor}
+
+
+@router.get("/user/{uid}/tracking")
+async def user_tracking(
+    uid: str,
+    x_user_id: str = Header(...),
+    start: str | None = None,
+    end: str | None = None,
+):
+    """Return workout and body-metrics history for a user within a date range."""
+    return await get_user_tracking(uid, start=start, end=end)
 
 
 @router.get("/{post_id}")

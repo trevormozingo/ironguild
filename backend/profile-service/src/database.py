@@ -862,3 +862,44 @@ async def mark_notifications_read(uid: str) -> int:
         {"$set": {"read": True}},
     )
     return result.modified_count
+
+
+async def get_user_tracking(
+    uid: str,
+    start: str | None = None,
+    end: str | None = None,
+) -> dict[str, Any]:
+    """Return workout and body-metrics history for a user within a date range."""
+    date_filter: dict[str, Any] = {}
+    if start:
+        date_filter["$gte"] = start
+    if end:
+        date_filter["$lte"] = end
+
+    workout_query: dict[str, Any] = {"authorUid": uid, "workout": {"$ne": None}}
+    metrics_query: dict[str, Any] = {"authorUid": uid, "bodyMetrics": {"$ne": None}}
+    if date_filter:
+        workout_query["createdAt"] = date_filter
+        metrics_query["createdAt"] = date_filter
+
+    workouts_cursor = (
+        _posts()
+        .find(workout_query, {"workout": 1, "createdAt": 1, "_id": 0})
+        .sort("createdAt", 1)
+    )
+    workouts = [
+        {"createdAt": doc["createdAt"], **doc["workout"]}
+        async for doc in workouts_cursor
+    ]
+
+    metrics_cursor = (
+        _posts()
+        .find(metrics_query, {"bodyMetrics": 1, "createdAt": 1, "_id": 0})
+        .sort("createdAt", 1)
+    )
+    body_metrics = [
+        {"createdAt": doc["createdAt"], **doc["bodyMetrics"]}
+        async for doc in metrics_cursor
+    ]
+
+    return {"workouts": workouts, "bodyMetrics": body_metrics}

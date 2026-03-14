@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Text, colors, spacing, radii } from '@/components/ui';
 import { PostCard, type Post } from '@/components/PostCard';
+import { TrackingView } from '@/components/TrackingView';
 import { getIdToken } from '@/services/auth';
 import { config } from '@/config';
 
@@ -81,6 +82,7 @@ export function ProfileView({
 }: Props) {
   const router = useRouter();
   const [photoExpanded, setPhotoExpanded] = useState(false);
+  const [activeTab, setActiveTab] = useState<'posts' | 'tracking'>('posts');
   const flatListRef = useRef<FlatList>(null);
   const hasScrolled = useRef(false);
 
@@ -97,6 +99,126 @@ export function ProfileView({
       }, 300);
     }
   }, [scrollToPostId, posts]);
+
+  const profileHeaderContent = profile ? (
+    <>
+      {/* Profile Photo */}
+      {profile.profilePhoto ? (
+        <Pressable onPress={() => setPhotoExpanded(true)}>
+          <Image source={{ uri: profile.profilePhoto }} style={styles.avatar} />
+        </Pressable>
+      ) : (
+        <View style={styles.avatarPlaceholder}>
+          <Text style={styles.avatarInitial}>
+            {profile.displayName.charAt(0).toUpperCase()}
+          </Text>
+        </View>
+      )}
+      <Text variant="title">{profile.displayName}</Text>
+      <Text muted>@{profile.username}</Text>
+      {!isOwnProfile && onFollowToggle && (
+        <View style={styles.actionRow}>
+          <Pressable
+            style={[styles.followButton, isFollowing && styles.followButtonActive]}
+            onPress={onFollowToggle}
+            disabled={followLoading}
+          >
+            {followLoading ? (
+              <ActivityIndicator size="small" color={colors.foreground} />
+            ) : (
+              <Text style={[styles.followButtonText, isFollowing && styles.followButtonTextActive]}>
+                {isFollowing ? 'Following' : 'Follow'}
+              </Text>
+            )}
+          </Pressable>
+          {onMessage && (
+            <Pressable style={styles.messageButton} onPress={onMessage}>
+              <Ionicons name="chatbubble-outline" size={16} color={colors.foreground} />
+              <Text style={styles.messageButtonText}>Message</Text>
+            </Pressable>
+          )}
+        </View>
+      )}
+      <View style={styles.followRow}>
+        <Pressable
+          onPress={() => router.push(`/follow-list?tab=followers${followBase}` as any)}
+          style={styles.followTap}
+        >
+          <Text style={styles.followCount}>{followersCount}</Text>
+          <Text muted> followers</Text>
+        </Pressable>
+        <View style={{ width: spacing.lg }} />
+        <Pressable
+          onPress={() => router.push(`/follow-list?tab=following${followBase}` as any)}
+          style={styles.followTap}
+        >
+          <Text style={styles.followCount}>{followingCount}</Text>
+          <Text muted> following</Text>
+        </Pressable>
+      </View>
+      {profile.bio && <Text style={styles.bio}>{profile.bio}</Text>}
+      {profile.fitnessLevel && (
+        <View style={styles.levelBadge}>
+          <Ionicons name="barbell-outline" size={14} color={colors.primaryForeground} />
+          <Text style={styles.levelBadgeText}>
+            {profile.fitnessLevel.charAt(0).toUpperCase() + profile.fitnessLevel.slice(1)}
+          </Text>
+        </View>
+      )}
+      {profile.location?.label && (
+        <View style={styles.locationRow}>
+          <Ionicons name="location-outline" size={14} color={colors.mutedForeground} />
+          <Text muted style={styles.locationText}>{profile.location.label}</Text>
+        </View>
+      )}
+      {profile.interests && profile.interests.length > 0 && (
+        <View style={styles.interestsRow}>
+          {profile.interests.map((interest) => (
+            <View key={interest} style={styles.interestTag}>
+              <Text style={styles.interestTagText}>{interest}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+    </>
+  ) : (
+    <Text muted>Could not load profile.</Text>
+  );
+
+  const renderHeader = () => (
+    <View>
+      <View style={styles.profileHeader}>{profileHeaderContent}</View>
+      {/* ── Subtabs ── */}
+      <View style={styles.tabBar}>
+        <Pressable
+          style={[styles.tab, activeTab === 'posts' && styles.tabActive]}
+          onPress={() => setActiveTab('posts')}
+        >
+          <Ionicons
+            name="grid-outline"
+            size={18}
+            color={activeTab === 'posts' ? colors.foreground : colors.mutedForeground}
+          />
+          <Text style={[styles.tabText, activeTab === 'posts' && styles.tabTextActive]}>
+            Posts
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[styles.tab, activeTab === 'tracking' && styles.tabActive]}
+          onPress={() => setActiveTab('tracking')}
+        >
+          <Ionicons
+            name="analytics-outline"
+            size={18}
+            color={activeTab === 'tracking' ? colors.foreground : colors.mutedForeground}
+          />
+          <Text style={[styles.tabText, activeTab === 'tracking' && styles.tabTextActive]}>
+            Tracking
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  );
 
   return (
     <>
@@ -115,153 +237,61 @@ export function ProfileView({
         </Pressable>
       </Modal>
     )}
-    <FlatList
-      ref={flatListRef}
-      data={posts}
-      keyExtractor={(item) => item.id}
-      renderItem={({ item }) => (
-        <PostCard
-          post={item}
-          showAuthor={false}
-          onPostChanged={onPostChanged}
-          onDeletePost={isOwnProfile ? onDeletePost : undefined}
-          initialSection={item.id === scrollToPostId ? scrollToPostSection : null}
-          initialReactionType={item.id === scrollToPostId ? scrollToReactionType : undefined}
-        />
-      )}
-      onEndReached={onLoadMore}
-      onEndReachedThreshold={0.5}
-      extraData={`${scrollToPostId}-${scrollToPostSection}`}
-      onScrollToIndexFailed={(info) => {
-        setTimeout(() => {
-          flatListRef.current?.scrollToIndex({ index: info.index, animated: true, viewOffset: 20 });
-        }, 500);
-      }}
-      contentContainerStyle={styles.listContent}
-      ListHeaderComponent={
-        <View style={styles.profileHeader}>
-          {profile ? (
-            <>
-              {/* Profile Photo */}
-              {profile.profilePhoto ? (
-                <Pressable onPress={() => setPhotoExpanded(true)}>
-                  <Image
-                    source={{ uri: profile.profilePhoto }}
-                    style={styles.avatar}
-                  />
-                </Pressable>
-              ) : (
-                <View style={styles.avatarPlaceholder}>
-                  <Text style={styles.avatarInitial}>
-                    {profile.displayName.charAt(0).toUpperCase()}
-                  </Text>
-                </View>
-              )}
-              <Text variant="title">{profile.displayName}</Text>
-              <Text muted>@{profile.username}</Text>
-              {!isOwnProfile && onFollowToggle && (
-                <View style={styles.actionRow}>
-                  <Pressable
-                    style={[
-                      styles.followButton,
-                      isFollowing && styles.followButtonActive,
-                    ]}
-                    onPress={onFollowToggle}
-                    disabled={followLoading}
-                  >
-                    {followLoading ? (
-                      <ActivityIndicator size="small" color={colors.foreground} />
-                    ) : (
-                      <Text
-                        style={[
-                          styles.followButtonText,
-                          isFollowing && styles.followButtonTextActive,
-                        ]}
-                      >
-                        {isFollowing ? 'Following' : 'Follow'}
-                      </Text>
-                    )}
-                  </Pressable>
-                  {onMessage && (
-                    <Pressable style={styles.messageButton} onPress={onMessage}>
-                      <Ionicons name="chatbubble-outline" size={16} color={colors.foreground} />
-                      <Text style={styles.messageButtonText}>Message</Text>
-                    </Pressable>
-                  )}
-                </View>
-              )}
-              <View style={styles.followRow}>
-                <Pressable
-                  onPress={() =>
-                    router.push(
-                      `/follow-list?tab=followers${followBase}` as any,
-                    )
-                  }
-                  style={styles.followTap}
-                >
-                  <Text style={styles.followCount}>{followersCount}</Text>
-                  <Text muted> followers</Text>
-                </Pressable>
-                <View style={{ width: spacing.lg }} />
-                <Pressable
-                  onPress={() =>
-                    router.push(
-                      `/follow-list?tab=following${followBase}` as any,
-                    )
-                  }
-                  style={styles.followTap}
-                >
-                  <Text style={styles.followCount}>{followingCount}</Text>
-                  <Text muted> following</Text>
-                </Pressable>
-              </View>
-              {profile.bio && <Text style={styles.bio}>{profile.bio}</Text>}
-              {profile.fitnessLevel && (
-                <View style={styles.levelBadge}>
-                  <Ionicons name="barbell-outline" size={14} color={colors.primaryForeground} />
-                  <Text style={styles.levelBadgeText}>
-                    {profile.fitnessLevel.charAt(0).toUpperCase() + profile.fitnessLevel.slice(1)}
-                  </Text>
-                </View>
-              )}
-              {profile.location?.label && (
-                <View style={styles.locationRow}>
-                  <Ionicons name="location-outline" size={14} color={colors.mutedForeground} />
-                  <Text muted style={styles.locationText}>{profile.location.label}</Text>
-                </View>
-              )}
-              {profile.interests && profile.interests.length > 0 && (
-                <View style={styles.interestsRow}>
-                  {profile.interests.map((interest) => (
-                    <View key={interest} style={styles.interestTag}>
-                      <Text style={styles.interestTagText}>{interest}</Text>
-                    </View>
-                  ))}
-                </View>
-              )}
-            </>
-          ) : (
-            <Text muted>Could not load profile.</Text>
-          )}
-        </View>
-      }
-      ListEmptyComponent={
-        !postsLoading ? (
-          <View style={styles.emptyState}>
-            <Text muted>
-              {isOwnProfile
-                ? 'No posts yet. Share your first workout!'
-                : 'No posts yet.'}
-            </Text>
-          </View>
-        ) : null
-      }
-      ListFooterComponent={
-        postsLoading ? (
-          <ActivityIndicator style={styles.footerLoader} color={colors.primary} />
-        ) : null
-      }
-    />
+    {activeTab === 'posts' ? (
+      <FlatList
+        ref={flatListRef}
+        data={posts}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <PostCard
+            post={item}
+            showAuthor={false}
+            onPostChanged={onPostChanged}
+            onDeletePost={isOwnProfile ? onDeletePost : undefined}
+            initialSection={item.id === scrollToPostId ? scrollToPostSection : null}
+            initialReactionType={item.id === scrollToPostId ? scrollToReactionType : undefined}
+          />
+        )}
+        onEndReached={onLoadMore}
+        onEndReachedThreshold={0.5}
+        extraData={`${scrollToPostId}-${scrollToPostSection}`}
+        onScrollToIndexFailed={(info) => {
+          setTimeout(() => {
+            flatListRef.current?.scrollToIndex({ index: info.index, animated: true, viewOffset: 20 });
+          }, 500);
+        }}
+        contentContainerStyle={styles.listContent}
+        ListHeaderComponent={renderHeader}
+        ListEmptyComponent={
+          !postsLoading ? (
+            <View style={styles.emptyState}>
+              <Text muted>
+                {isOwnProfile
+                  ? 'No posts yet. Share your first workout!'
+                  : 'No posts yet.'}
+              </Text>
+            </View>
+          ) : null
+        }
+        ListFooterComponent={
+          postsLoading ? (
+            <ActivityIndicator style={styles.footerLoader} color={colors.primary} />
+          ) : null
+        }
+      />
+    ) : (
+      <FlatList
+        data={[]}
+        renderItem={null}
+        ListHeaderComponent={
+          <>
+            {renderHeader()}
+            {profile && <TrackingView uid={profile.id} />}
+          </>
+        }
+        contentContainerStyle={styles.listContent}
+      />
+    )}
     </>
   );
 }
@@ -426,6 +456,33 @@ const styles = StyleSheet.create({
   },
   interestTagText: {
     fontSize: 12,
+    color: colors.foreground,
+  },
+  tabBar: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    marginBottom: spacing.md,
+  },
+  tab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: spacing.sm + 2,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  tabActive: {
+    borderBottomColor: colors.foreground,
+  },
+  tabText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.mutedForeground,
+  },
+  tabTextActive: {
     color: colors.foreground,
   },
 });

@@ -11,11 +11,11 @@ What it does (in order):
   3. YOU follow every fake user  →  they appear in your feed.
   4. Each fake user creates 1-3 posts.
   5. Fake users react / comment on each other's posts.
-  6. Creates 3-5 posts for YOU.
+  6. Creates ~150 tracking posts for YOU spread over 1 year (backdated).
   7. Fake users react / comment on YOUR posts.
 
 Requirements:
-    pip install requests faker firebase-admin
+    pip install requests faker firebase-admin pymongo
 """
 
 import argparse
@@ -26,10 +26,13 @@ import random
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
+from typing import Optional
 
 import firebase_admin
 from firebase_admin import auth as fb_auth, firestore as fb_firestore
+from pymongo import MongoClient
 import requests
 from faker import Faker
 
@@ -312,17 +315,30 @@ def create_post(gateway: str, token: str):
     if random.random() < 0.7:
         body["body"] = fake.sentence(nb_words=random.randint(5, 25))
     if random.random() < 0.6:
-        body["workout"] = {
+        workout: dict = {
             "activityType": random.choice(ACTIVITY_TYPES),
             "durationSeconds": random.randint(600, 7200),
             "caloriesBurned": random.randint(50, 900),
         }
+        if random.random() < 0.5:
+            workout["distanceMiles"] = round(random.uniform(0.5, 15), 2)
+        if random.random() < 0.4:
+            workout["avgHeartRate"] = random.randint(110, 175)
+        if random.random() < 0.3:
+            workout["maxHeartRate"] = random.randint(160, 200)
+        if random.random() < 0.2:
+            workout["elevationFeet"] = random.randint(50, 3000)
+        body["workout"] = workout
     if random.random() < 0.3:
         metrics: dict = {}
         if random.random() < 0.8:
             metrics["weightLbs"] = round(random.uniform(110, 280), 1)
         if random.random() < 0.5:
             metrics["bodyFatPercentage"] = round(random.uniform(8, 35), 1)
+        if random.random() < 0.3:
+            metrics["restingHeartRate"] = random.randint(45, 80)
+        if random.random() < 0.2:
+            metrics["leanBodyMassLbs"] = round(random.uniform(90, 200), 1)
         if metrics:
             body["bodyMetrics"] = metrics
 
@@ -352,6 +368,76 @@ def comment_on_post(gateway: str, token: str, post_id: str):
         json={"body": fake.sentence(nb_words=random.randint(3, 15))},
         headers=_hdr(token))
     return resp.status_code == 201
+
+
+# ── MongoDB backdating ──────────────────────────────────────────────
+
+_mongo_client: Optional[MongoClient] = None
+
+
+def _get_mongo_db(mongo_uri: str, mongo_db: str):
+    global _mongo_client
+    if _mongo_client is None:
+        _mongo_client = MongoClient(mongo_uri)
+    return _mongo_client[mongo_db]
+
+
+def backdate_post(mongo_uri: str, mongo_db: str, post_id: str,
+                  iso_date: str):
+    """Update createdAt on a post and its feed entries in MongoDB."""
+    from bson import ObjectId
+    db = _get_mongo_db(mongo_uri, mongo_db)
+    oid = ObjectId(post_id)
+    db.posts.update_one({"_id": oid}, {"$set": {"createdAt": iso_date}})
+    db.feed.update_many({"postId": oid}, {"$set": {"createdAt": iso_date}})
+
+
+# ── Tracking-focused post creator ───────────────────────────────────
+
+def create_tracking_post(gateway: str, token: str):
+    """Create a post that always includes workout data and often body metrics.
+    Used for generating rich tracking chart data."""
+    body: dict = {"title": random.choice(POST_TITLES)}
+    if random.random() < 0.5:
+        body["body"] = fake.sentence(nb_words=random.randint(5, 25))
+
+    # Always include workout
+    workout: dict = {
+        "activityType": random.choice(ACTIVITY_TYPES),
+        "durationSeconds": random.randint(600, 7200),
+        "caloriesBurned": random.randint(50, 900),
+    }
+    if random.random() < 0.7:
+        workout["distanceMiles"] = round(random.uniform(0.5, 15), 2)
+    if random.random() < 0.6:
+        workout["avgHeartRate"] = random.randint(110, 175)
+    if random.random() < 0.5:
+        workout["maxHeartRate"] = random.randint(160, 200)
+    if random.random() < 0.3:
+        workout["elevationFeet"] = random.randint(50, 3000)
+    body["workout"] = workout
+
+    # 60% chance of body metrics
+    if random.random() < 0.6:
+        metrics: dict = {}
+        if random.random() < 0.9:
+            metrics["weightLbs"] = round(random.uniform(160, 200), 1)
+        if random.random() < 0.6:
+            metrics["bodyFatPercentage"] = round(random.uniform(12, 25), 1)
+        if random.random() < 0.5:
+            metrics["restingHeartRate"] = random.randint(50, 70)
+        if random.random() < 0.4:
+            metrics["leanBodyMassLbs"] = round(random.uniform(130, 175), 1)
+        if metrics:
+            body["bodyMetrics"] = metrics
+
+    resp = requests.post(f"{gateway}/posts", json=body,
+                         headers=_hdr(token))
+    if resp.status_code == 201:
+        return resp.json()
+    print(f"  [!] tracking post failed ({resp.status_code}): {resp.text[:200]}",
+          file=sys.stderr)
+    return None
 
 
 # ── Per-user creation ────────────────────────────────────────────────
@@ -393,9 +479,14 @@ def main():
     ap.add_argument("--gateway", default="http://localhost:8080")
     ap.add_argument("--emulator", default="localhost:9099")
     ap.add_argument("--posts-per-user", type=int, default=3)
-    ap.add_argument("--my-posts", type=int, default=5,
-                    help="Posts to create for YOU (default 5)")
+    ap.add_argument("--my-posts", type=int, default=150,
+                    help="Tracking posts for YOU spread over 1 year (default 150)")
     ap.add_argument("--workers", type=int, default=20)
+    ap.add_argument("--mongo-uri",
+                    default="mongodb://localhost:27017/?directConnection=true",
+                    help="MongoDB URI for backdating posts")
+    ap.add_argument("--mongo-db", default="fervora_test",
+                    help="MongoDB database name")
     args = ap.parse_args()
 
     my_uid = args.uid
@@ -405,6 +496,8 @@ def main():
     max_posts = args.posts_per_user
     my_posts_count = args.my_posts
     workers = args.workers
+    mongo_uri = args.mongo_uri
+    mongo_db = args.mongo_db
 
     # ── Verify services ──────────────────────────────────────────────
     print(f"Gateway : {gateway}")
@@ -448,96 +541,117 @@ def main():
 
     print(f"  ✓ {len(users)} users in {time.time() - t0:.1f}s")
     if not users:
-        sys.exit("No users created – aborting.")
+        print("  ⚠ No new users created (they may already exist). Skipping to your posts.")
 
-    # ── Phase 2: YOU follow every fake user ──────────────────────────
-    print(f"\n=== Phase 2: You follow {len(users)} users ===")
-    t1 = time.time()
+    # ── Phase 2–4: Only run if we have fake users ─────────────────
+    other_posts: list = []
     follow_ok = 0
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        futs = [pool.submit(follow_user, gateway, my_token, uid)
-                for uid, _, _ in users]
-        for f in as_completed(futs):
-            if f.result():
-                follow_ok += 1
-    print(f"  ✓ {follow_ok} follows in {time.time() - t1:.1f}s")
-
-    # ── Phase 3: Fake users create posts ─────────────────────────────
-    print(f"\n=== Phase 3: Fake users create posts (up to {max_posts} each) ===")
-    t2 = time.time()
-    other_posts: list[tuple[str, str, dict]] = []  # (uid, token, post)
-
-    def _make_posts(user_tuple):
-        uid, token, _ = user_tuple
-        out = []
-        for _ in range(random.randint(1, max_posts)):
-            p = create_post(gateway, token)
-            if p:
-                out.append((uid, token, p))
-        return out
-
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        futs = [pool.submit(_make_posts, u) for u in users]
-        done = 0
-        for f in as_completed(futs):
-            done += 1
-            other_posts.extend(f.result())
-            if done % 50 == 0 or done == len(users):
-                print(f"  [{done}/{len(users)}]  {len(other_posts)} posts")
-    print(f"  ✓ {len(other_posts)} posts in {time.time() - t2:.1f}s")
-
-    # ── Phase 4: Fake users react & comment on EACH OTHER's posts ────
-    print("\n=== Phase 4: Cross-interactions among fake users ===")
-    t3 = time.time()
     rxn_count = 0
     cmt_count = 0
 
-    if other_posts:
-        def _interact(user_tuple):
-            _, token, _ = user_tuple
-            rc, cc = 0, 0
-            for _, _, post in random.sample(
-                    other_posts, min(random.randint(3, 10), len(other_posts))):
-                if react_to_post(gateway, token, post["id"]):
-                    rc += 1
-            for _, _, post in random.sample(
-                    other_posts, min(random.randint(1, 5), len(other_posts))):
-                if comment_on_post(gateway, token, post["id"]):
-                    cc += 1
-            return rc, cc
+    if users:
+        # ── Phase 2: YOU follow every fake user ──────────────────────
+        print(f"\n=== Phase 2: You follow {len(users)} users ===")
+        t1 = time.time()
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futs = [pool.submit(follow_user, gateway, my_token, uid)
+                    for uid, _, _ in users]
+            for f in as_completed(futs):
+                if f.result():
+                    follow_ok += 1
+        print(f"  ✓ {follow_ok} follows in {time.time() - t1:.1f}s")
+
+        # ── Phase 3: Fake users create posts ─────────────────────────
+        print(f"\n=== Phase 3: Fake users create posts (up to {max_posts} each) ===")
+        t2 = time.time()
+
+        def _make_posts(user_tuple):
+            uid, token, _ = user_tuple
+            out = []
+            for _ in range(random.randint(1, max_posts)):
+                p = create_post(gateway, token)
+                if p:
+                    out.append((uid, token, p))
+            return out
 
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            futs = [pool.submit(_interact, u) for u in users]
+            futs = [pool.submit(_make_posts, u) for u in users]
             done = 0
             for f in as_completed(futs):
                 done += 1
-                r, c = f.result()
-                rxn_count += r
-                cmt_count += c
+                other_posts.extend(f.result())
                 if done % 50 == 0 or done == len(users):
-                    print(f"  [{done}/{len(users)}]  {rxn_count} reactions, "
-                          f"{cmt_count} comments")
+                    print(f"  [{done}/{len(users)}]  {len(other_posts)} posts")
+        print(f"  ✓ {len(other_posts)} posts in {time.time() - t2:.1f}s")
 
-    print(f"  ✓ {rxn_count} reactions, {cmt_count} comments "
-          f"in {time.time() - t3:.1f}s")
+        # ── Phase 4: Fake users react & comment on EACH OTHER's posts ─
+        print("\n=== Phase 4: Cross-interactions among fake users ===")
+        t3 = time.time()
 
-    # ── Phase 5: Create YOUR posts ───────────────────────────────────
-    print(f"\n=== Phase 5: Creating {my_posts_count} posts for YOU ===")
+        if other_posts:
+            def _interact(user_tuple):
+                _, token, _ = user_tuple
+                rc, cc = 0, 0
+                for _, _, post in random.sample(
+                        other_posts, min(random.randint(3, 10), len(other_posts))):
+                    if react_to_post(gateway, token, post["id"]):
+                        rc += 1
+                for _, _, post in random.sample(
+                        other_posts, min(random.randint(1, 5), len(other_posts))):
+                    if comment_on_post(gateway, token, post["id"]):
+                        cc += 1
+                return rc, cc
+
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futs = [pool.submit(_interact, u) for u in users]
+                done = 0
+                for f in as_completed(futs):
+                    done += 1
+                    r, c = f.result()
+                    rxn_count += r
+                    cmt_count += c
+                    if done % 50 == 0 or done == len(users):
+                        print(f"  [{done}/{len(users)}]  {rxn_count} reactions, "
+                              f"{cmt_count} comments")
+
+        print(f"  ✓ {rxn_count} reactions, {cmt_count} comments "
+              f"in {time.time() - t3:.1f}s")
+
+    # ── Phase 5: Create YOUR posts (spread over 1 year) ────────────
+    print(f"\n=== Phase 5: Creating {my_posts_count} tracking posts for YOU (over 1 year) ===")
     t4 = time.time()
-    my_posts: list[dict] = []
+
+    # Generate dates spread over the past year with some randomness
+    now_dt = datetime.now(timezone.utc)
+    year_ago = now_dt - timedelta(days=365)
+    post_dates: list[datetime] = []
     for _ in range(my_posts_count):
-        p = create_post(gateway, my_token)
+        random_dt = year_ago + timedelta(
+            seconds=random.randint(0, int(365 * 86400))
+        )
+        post_dates.append(random_dt)
+    post_dates.sort()  # oldest first
+
+    my_posts: list[dict] = []
+    for i, dt in enumerate(post_dates):
+        p = create_tracking_post(gateway, my_token)
         if p:
+            iso = dt.isoformat()
+            backdate_post(mongo_uri, mongo_db, p["id"], iso)
             my_posts.append(p)
-    print(f"  ✓ {len(my_posts)} posts in {time.time() - t4:.1f}s")
+        if (i + 1) % 25 == 0 or (i + 1) == my_posts_count:
+            print(f"  [{i + 1}/{my_posts_count}]  {len(my_posts)} created")
+
+    print(f"  ✓ {len(my_posts)} tracking posts in {time.time() - t4:.1f}s")
 
     # ── Phase 6: Fake users react & comment on YOUR posts ────────────
-    print("\n=== Phase 6: Fake users interact with YOUR posts ===")
-    t5 = time.time()
     my_rxn = 0
     my_cmt = 0
 
-    if my_posts:
+    if users and my_posts:
+        print("\n=== Phase 6: Fake users interact with YOUR posts ===")
+        t5 = time.time()
+
         def _interact_mine(user_tuple):
             _, token, _ = user_tuple
             rc, cc = 0, 0
@@ -564,44 +678,46 @@ def main():
                     print(f"  [{done}/{len(users)}]  {my_rxn} reactions, "
                           f"{my_cmt} comments on your posts")
 
-    print(f"  ✓ {my_rxn} reactions, {my_cmt} comments on your posts "
-          f"in {time.time() - t5:.1f}s")
+        print(f"  ✓ {my_rxn} reactions, {my_cmt} comments on your posts "
+              f"in {time.time() - t5:.1f}s")
 
     # ── Phase 7: Fake users send YOU messages ────────────────────────
-    print(f"\n=== Phase 7: Seeding conversations ===")
-    t6 = time.time()
-    fs = fb_firestore.client()
-    msg_users = random.sample(users, min(10, len(users)))
     convo_count = 0
 
-    for uid, _token, uname in msg_users:
-        try:
-            participants = sorted([my_uid, uid])
-            convo_ref = fs.collection("conversations").document()
-            thread = random.choice(_SEED_MESSAGES)
-            # Alternate messages between the fake user and you
-            senders = [uid, my_uid]
-            now = time.time()
-            convo_ref.set({
-                "participants": participants,
-                "hiddenFor": [],
-                "lastMessage": thread[-1],
-                "lastMessageAt": fb_firestore.SERVER_TIMESTAMP,
-                "createdAt": fb_firestore.SERVER_TIMESTAMP,
-            })
-            msgs_coll = convo_ref.collection("messages")
-            for i, msg_text in enumerate(thread):
-                sender = senders[i % 2]
-                msgs_coll.add({
-                    "senderUid": sender,
-                    "text": msg_text,
+    if users:
+        print(f"\n=== Phase 7: Seeding conversations ===")
+        t6 = time.time()
+        fs = fb_firestore.client()
+        msg_users = random.sample(users, min(10, len(users)))
+
+        for uid, _token, uname in msg_users:
+            try:
+                participants = sorted([my_uid, uid])
+                convo_ref = fs.collection("conversations").document()
+                thread = random.choice(_SEED_MESSAGES)
+                # Alternate messages between the fake user and you
+                senders = [uid, my_uid]
+                now = time.time()
+                convo_ref.set({
+                    "participants": participants,
+                    "hiddenFor": [],
+                    "lastMessage": thread[-1],
+                    "lastMessageAt": fb_firestore.SERVER_TIMESTAMP,
                     "createdAt": fb_firestore.SERVER_TIMESTAMP,
                 })
-            convo_count += 1
-        except Exception as e:
-            print(f"  [!] convo with {uname}: {e}", file=sys.stderr)
+                msgs_coll = convo_ref.collection("messages")
+                for i, msg_text in enumerate(thread):
+                    sender = senders[i % 2]
+                    msgs_coll.add({
+                        "senderUid": sender,
+                        "text": msg_text,
+                        "createdAt": fb_firestore.SERVER_TIMESTAMP,
+                    })
+                convo_count += 1
+            except Exception as e:
+                print(f"  [!] convo with {uname}: {e}", file=sys.stderr)
 
-    print(f"  ✓ {convo_count} conversations in {time.time() - t6:.1f}s")
+        print(f"  ✓ {convo_count} conversations in {time.time() - t6:.1f}s")
 
     # ── Summary ──────────────────────────────────────────────────────
     total = time.time() - t0
