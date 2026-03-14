@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { ActivityIndicator, Dimensions, StyleSheet, View } from 'react-native';
 import { LineChart } from 'react-native-gifted-charts';
+import { Ionicons } from '@expo/vector-icons';
 import { Text, colors, spacing, radii } from '@/components/ui';
 import { getIdToken } from '@/services/auth';
 import { config } from '@/config';
@@ -77,6 +78,33 @@ function buildLineData(entries: { createdAt: string; value: number }[]) {
 
 // ── ChartCard ───────────────────────────────────────────────────────
 
+function statRow(data: { value: number }[], unit: string) {
+  if (data.length < 2) return null;
+  const vals = data.map((d) => d.value);
+  const min = Math.min(...vals);
+  const max = Math.max(...vals);
+  const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+  const fmt = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
+  return (
+    <View style={styles.statRow}>
+      <View style={styles.statItem}>
+        <Text style={styles.statLabel}>Min</Text>
+        <Text style={styles.statValue}>{fmt(min)}</Text>
+      </View>
+      <View style={styles.statDivider} />
+      <View style={styles.statItem}>
+        <Text style={styles.statLabel}>Avg</Text>
+        <Text style={styles.statValue}>{fmt(avg)}</Text>
+      </View>
+      <View style={styles.statDivider} />
+      <View style={styles.statItem}>
+        <Text style={styles.statLabel}>Max</Text>
+        <Text style={styles.statValue}>{fmt(max)}</Text>
+      </View>
+    </View>
+  );
+}
+
 function ChartCard({
   title,
   data,
@@ -100,29 +128,36 @@ function ChartCard({
   const latest = data[data.length - 1].value;
   const first = data[0].value;
   const delta = latest - first;
-  const sign = delta >= 0 ? '+' : '';
+  const pct = first !== 0 ? ((delta / Math.abs(first)) * 100) : 0;
+  const up = delta >= 0;
 
   return (
     <View style={styles.chartCard}>
       <View style={styles.chartHeader}>
-        <Text style={styles.chartTitle}>{title}</Text>
+        <View style={styles.chartTitleRow}>
+          <View style={[styles.accentDot, { backgroundColor: color }]} />
+          <Text style={styles.chartTitle}>{title}</Text>
+        </View>
         <View style={styles.chartMeta}>
           <Text style={styles.chartLatest}>
-            {Number.isInteger(latest) ? latest : latest.toFixed(1)} {unit}
+            {Number.isInteger(latest) ? latest : latest.toFixed(1)}
+            <Text style={styles.chartUnit}> {unit}</Text>
           </Text>
           {data.length > 1 && (
-            <Text
-              style={[
-                styles.chartDelta,
-                { color: delta >= 0 ? '#2ecc71' : '#e74c3c' },
-              ]}
-            >
-              {sign}
-              {Number.isInteger(delta) ? delta : delta.toFixed(1)}
-            </Text>
+            <View style={styles.deltaRow}>
+              <Ionicons
+                name={up ? 'trending-up' : 'trending-down'}
+                size={14}
+                color={up ? '#2ecc71' : '#e74c3c'}
+              />
+              <Text style={[styles.chartDelta, { color: up ? '#2ecc71' : '#e74c3c' }]}>
+                {up ? '+' : ''}{Number.isInteger(delta) ? delta : delta.toFixed(1)} ({Math.abs(pct).toFixed(0)}%)
+              </Text>
+            </View>
           )}
         </View>
       </View>
+
       <LineChart
         data={lineData}
         width={CHART_W}
@@ -135,7 +170,9 @@ function ChartCard({
         thickness={2}
         dataPointsRadius={lineData.length > 20 ? 0 : 3}
         curved
-        hideRules
+        hideRules={false}
+        rulesColor={'rgba(0,0,0,0.04)'}
+        rulesType="dashed"
         yAxisTextStyle={{ color: colors.mutedForeground, fontSize: 10 }}
         xAxisLabelTextStyle={{ color: colors.mutedForeground, fontSize: 9 }}
         hideYAxisText={false}
@@ -143,8 +180,8 @@ function ChartCard({
         isAnimated
         animationDuration={600}
         startFillColor={color}
-        endFillColor={colors.background}
-        startOpacity={0.2}
+        endFillColor="transparent"
+        startOpacity={0.15}
         endOpacity={0}
         areaChart
         noOfSections={4}
@@ -153,6 +190,8 @@ function ChartCard({
         scrollToEnd={scrollable}
         disableScroll={!scrollable}
       />
+
+      {statRow(data, unit)}
     </View>
   );
 }
@@ -244,16 +283,49 @@ export function TrackingView({ uid }: Props) {
   if (!data || (!hasWorkoutCharts && !hasBodyCharts)) {
     return (
       <View style={styles.center}>
-        <Text muted>No tracking data yet. Post workouts or body stats to see charts.</Text>
+        <Ionicons name="analytics-outline" size={48} color={colors.border} />
+        <Text muted style={{ marginTop: spacing.md, textAlign: 'center' }}>
+          No tracking data yet.{'\n'}Post workouts or body stats to see charts.
+        </Text>
       </View>
     );
   }
 
+  // Summary stats
+  const totalWorkouts = workouts.length;
+  const totalBodyEntries = bodyMetrics.length;
+  const allDates = [...workouts.map(w => w.createdAt), ...bodyMetrics.map(m => m.createdAt)].sort();
+  const spanWeeks = allDates.length >= 2
+    ? Math.max(1, Math.round((new Date(allDates[allDates.length - 1]).getTime() - new Date(allDates[0]).getTime()) / (7 * 24 * 60 * 60 * 1000)))
+    : 1;
+  const perWeek = (totalWorkouts / spanWeeks).toFixed(1);
+
   return (
     <View>
+      {/* ── Summary Banner ── */}
+      <View style={styles.summaryRow}>
+        <View style={styles.summaryItem}>
+          <Text style={styles.summaryValue}>{totalWorkouts}</Text>
+          <Text style={styles.summaryLabel}>Workouts</Text>
+        </View>
+        <View style={styles.summaryDivider} />
+        <View style={styles.summaryItem}>
+          <Text style={styles.summaryValue}>{perWeek}</Text>
+          <Text style={styles.summaryLabel}>Per Week</Text>
+        </View>
+        <View style={styles.summaryDivider} />
+        <View style={styles.summaryItem}>
+          <Text style={styles.summaryValue}>{totalBodyEntries}</Text>
+          <Text style={styles.summaryLabel}>Body Logs</Text>
+        </View>
+      </View>
+
       {hasWorkoutCharts && (
         <>
-          <Text style={styles.sectionTitle}>Workouts</Text>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="fitness-outline" size={18} color={colors.brandPurple} />
+            <Text style={styles.sectionTitle}>Workouts</Text>
+          </View>
           <ChartCard title="Duration" data={durationData} unit="min" color={colors.brandPurple} />
           <ChartCard title="Calories" data={caloriesData} unit="cal" color={colors.brandRed} />
           <ChartCard title="Distance" data={distanceData} unit="mi" color="#3498db" />
@@ -262,7 +334,10 @@ export function TrackingView({ uid }: Props) {
       )}
       {hasBodyCharts && (
         <>
-          <Text style={styles.sectionTitle}>Body Stats</Text>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="body-outline" size={18} color="#2C3E50" />
+            <Text style={styles.sectionTitle}>Body Stats</Text>
+          </View>
           <ChartCard title="Weight" data={weightData} unit="lbs" color="#2C3E50" />
           <ChartCard title="Body Fat" data={bodyFatData} unit="%" color="#e67e22" />
           <ChartCard title="Resting Heart Rate" data={rhrData} unit="bpm" color="#e74c3c" />
@@ -281,32 +356,89 @@ const styles = StyleSheet.create({
     paddingVertical: spacing['2xl'],
     paddingHorizontal: spacing.lg,
   },
-  sectionTitle: {
-    fontSize: 18,
+  // ── Summary Banner ──
+  summaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    paddingVertical: spacing.md,
+    marginBottom: spacing.md,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.4)',
+    backgroundColor: 'rgba(255,255,255,0.6)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  summaryItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  summaryValue: {
+    fontSize: 22,
     fontWeight: '700',
     color: colors.foreground,
-    marginTop: spacing.sm,
+  },
+  summaryLabel: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: colors.mutedForeground,
+    marginTop: 2,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  summaryDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: colors.border,
+  },
+  // ── Section Header ──
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs + 2,
+    marginTop: spacing.md,
     marginBottom: spacing.sm,
   },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.foreground,
+    letterSpacing: 0.2,
+  },
+  // ── Chart Card ──
   chartCard: {
     padding: spacing.md,
     borderRadius: radii.md,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.4)',
-    backgroundColor: 'rgba(255, 255, 255, 0.6)',
-    marginBottom: spacing.md,
+    backgroundColor: 'rgba(255,255,255,0.6)',
+    marginBottom: spacing.sm,
     shadowColor: '#000',
-    shadowOffset: { width: 1, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 10,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 4,
     overflow: 'hidden',
   },
   chartHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: spacing.sm,
+  },
+  chartTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs + 2,
+  },
+  accentDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
   chartTitle: {
     fontSize: 14,
@@ -317,12 +449,54 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   chartLatest: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '700',
     color: colors.foreground,
   },
-  chartDelta: {
+  chartUnit: {
     fontSize: 12,
+    fontWeight: '500',
+    color: colors.mutedForeground,
+  },
+  deltaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    marginTop: 1,
+  },
+  chartDelta: {
+    fontSize: 11,
     fontWeight: '600',
+  },
+  // ── Stat Row (Min/Avg/Max) ──
+  statRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  statItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  statLabel: {
+    fontSize: 10,
+    fontWeight: '500',
+    color: colors.mutedForeground,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  statValue: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.foreground,
+    marginTop: 1,
+  },
+  statDivider: {
+    width: StyleSheet.hairlineWidth,
+    height: 24,
+    backgroundColor: colors.border,
   },
 });
